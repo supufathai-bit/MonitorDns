@@ -65,4 +65,4 @@ logs/
 
 # Cloudflare Workers (separate project)
 cloudflare-workers-api.ts
-workers/
+# workers/ - Keep workers folder in git
