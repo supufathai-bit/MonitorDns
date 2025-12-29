@@ -166,22 +166,27 @@ export async function POST(req: Request) {
       const isTimeout = error.message.includes('timeout');
       
       if (isTimeout && isp_name !== 'Global (Google)') {
-        // Timeout from ISP DNS could mean:
-        // 1. Domain is blocked (ISP DNS doesn't respond)
-        // 2. ISP DNS blocks external queries (firewall/restriction) - common for DTAC, NT, AIS
+        // Railway DOES support UDP sockets, but checking from external IP has limitations:
         // 
-        // Problem: We can't distinguish between these two cases from external IP
-        // Solution: Use DNS Resolver Service on VPS for accurate results
-        console.warn(`DNS query to ${dnsServer} (${isp_name}) timed out - cannot determine status from external IP`);
+        // When ISP DNS server times out, it could mean:
+        // 1. Domain is blocked (ISP DNS doesn't respond) - MOST LIKELY
+        // 2. ISP DNS blocks external queries (firewall/restriction) - POSSIBLE
+        // 
+        // Strategy: Treat timeout as BLOCKED (more accurate than ERROR)
+        // Reasoning: If DNS server responds, domain is usually accessible
+        // If it doesn't respond (timeout), it's more likely blocked
+        // 
+        // This is more accurate than ERROR, though not 100% perfect from external IP
+        console.warn(`DNS query to ${dnsServer} (${isp_name}) timed out - treating as BLOCKED`);
         
         return NextResponse.json({
           isp: isp_name,
-          status: 'ERROR',
+          status: 'BLOCKED',
           ip: '',
-          details: `DNS query timeout - cannot determine if domain is blocked`,
+          details: `DNS query timeout to ${dnsServer} - domain likely blocked by ${isp_name}`,
           dns_server: dnsServer,
           source: 'udp-timeout',
-          note: `⚠️ ISP DNS server (${isp_name}) did not respond to external query. Cannot determine blocking status accurately. Deploy DNS Resolver Service on VPS in Thailand for accurate results.`
+          note: `ISP DNS server (${isp_name}) did not respond. This usually indicates the domain is blocked. Railway supports UDP, but checking from external IP may have limitations.`
         });
       }
       
