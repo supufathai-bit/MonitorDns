@@ -20,6 +20,9 @@ export interface ISPResult {
   latency?: number;
   details?: string;
   manualOverride?: boolean; // True if user manually set this status
+  source?: 'server' | 'mobile-app' | 'vps'; // Source of the check
+  deviceId?: string; // Device ID if from mobile app
+  timestamp?: number; // When the check was performed
 }
 
 export interface Domain {
