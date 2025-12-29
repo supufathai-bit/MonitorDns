@@ -61,13 +61,9 @@ export default {
       return handleGetResults(request, env, corsHeaders);
     }
 
-    // Note: /api/check doesn't work in Workers (no UDP support)
-    // This will be handled by Android app directly or VPS
+    // DNS Check API (limited - Workers can't do UDP, but can return cached results)
     if (url.pathname === '/api/check' && request.method === 'POST') {
-      return jsonResponse({
-        error: 'DNS check not supported in Workers. Use Android app or VPS.',
-        note: 'Workers cannot perform UDP DNS queries. Use mobile app for accurate ISP DNS checking.'
-      }, 501, corsHeaders);
+      return handleDNSCheck(request, env, corsHeaders);
     }
 
     return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
