@@ -11,7 +11,7 @@ export const getHostname = (url: string): string => {
   }
 };
 
-// Check via Next.js API Route (Edge)
+// Check via API (Cloudflare Workers or local)
 const checkViaBackend = async (
   isp: ISP, 
   hostname: string, 
@@ -19,12 +19,13 @@ const checkViaBackend = async (
 ): Promise<ISPResult> => {
   try {
     const startTime = performance.now();
-    // Use relative path if backendUrl is empty (same origin)
-    const baseUrl = backendUrl ? backendUrl.replace(/\/$/, "") : '';
-    const apiUrl = `${baseUrl}/api/check`;
+    // Use Workers URL if provided, otherwise use backendUrl, otherwise use relative path
+    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL;
+    const baseUrl = workersUrl || backendUrl || '';
+    const apiUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/api/check` : '/api/check';
     
-    // Next.js API now handles ISP DNS checking directly via UDP
-    // backendUrl is optional (for external backend if needed)
+    // For Cloudflare Pages (static export), API routes don't work
+    // Must use Workers API or external backend
     const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

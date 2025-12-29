@@ -4,6 +4,10 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Cloudflare Pages requires static export
+  output: 'export',
+  // Disable trailing slash for Cloudflare Pages
+  trailingSlash: false,
 };
 
 module.exports = nextConfig;
