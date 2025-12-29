@@ -29,6 +29,24 @@ npm run dev
 
 Server will run at `http://localhost:5555`
 
+## ⚠️ Important: For Accurate ISP DNS Checking
+
+**Current Limitation:** Checking from external IP (Railway) may not accurately detect ISP blocking because:
+- ISP DNS servers (AIS, DTAC, NT) often don't respond to external queries
+- Timeouts can't distinguish between "blocked" vs "DNS server restriction"
+
+**Solution:** Deploy DNS Resolver Service on VPS in Thailand/Singapore
+
+### Quick VPS Setup (10 minutes)
+
+1. **Create VPS** in Singapore (Vultr/DigitalOcean - $2.50-$6/month)
+2. **Deploy DNS Resolver Service** - See `QUICK_VPS_SETUP.md` for step-by-step guide
+3. **Set Environment Variable** in Railway:
+   - `DNS_RESOLVER_SERVICE_URL=http://your-vps-ip:3001`
+4. **Done!** System will now check ISP DNS accurately
+
+📖 **Full Guide:** See `VPS_SETUP_GUIDE.md` for detailed instructions
+
 ## 📖 Usage
 
 ### 1. Configure Telegram Bot
