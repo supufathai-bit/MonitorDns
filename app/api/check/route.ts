@@ -166,18 +166,48 @@ export async function POST(req: Request) {
       const isTimeout = error.message.includes('timeout');
       
       if (isTimeout && isp_name !== 'Global (Google)') {
-        // Railway DOES support UDP sockets, but checking from external IP has limitations:
+        // Railway DOES support UDP sockets, but checking from external IP has limitations
         // 
         // When ISP DNS server times out, it could mean:
-        // 1. Domain is blocked (ISP DNS doesn't respond) - MOST LIKELY
-        // 2. ISP DNS blocks external queries (firewall/restriction) - POSSIBLE
+        // 1. Domain is blocked (ISP DNS doesn't respond) - POSSIBLE
+        // 2. ISP DNS blocks external queries (firewall/restriction) - COMMON for DTAC, NT
         // 
-        // Strategy: Treat timeout as BLOCKED (more accurate than ERROR)
-        // Reasoning: If DNS server responds, domain is usually accessible
-        // If it doesn't respond (timeout), it's more likely blocked
-        // 
-        // This is more accurate than ERROR, though not 100% perfect from external IP
-        console.warn(`DNS query to ${dnsServer} (${isp_name}) timed out - treating as BLOCKED`);
+        // Strategy: Use HTTP check as fallback to distinguish between these cases
+        // If HTTP accessible, DNS timeout is likely due to external query restriction
+        // If HTTP also fails, domain is likely actually blocked
+        console.warn(`DNS query to ${dnsServer} (${isp_name}) timed out - checking via HTTP fallback`);
+        
+        try {
+          // Try HTTP check to see if domain is accessible
+          // This helps distinguish between "blocked" vs "DNS server restriction"
+          const httpCheck = await fetch(`https://${hostname}`, {
+            method: 'HEAD',
+            signal: AbortSignal.timeout(5000),
+            headers: { 
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            }
+          }).catch(() => null);
+          
+          if (httpCheck && (httpCheck.ok || httpCheck.status < 500)) {
+            // Domain is accessible via HTTP, so DNS timeout is likely due to external query restriction
+            // Mark as ACTIVE but note the limitation
+            return NextResponse.json({
+              isp: isp_name,
+              status: 'ACTIVE',
+              ip: '', // Can't get IP from DNS timeout
+              details: `DNS timeout, but HTTP accessible - ${isp_name} DNS may restrict external queries`,
+              dns_server: dnsServer,
+              source: 'http-fallback',
+              note: `⚠️ DNS server (${isp_name}) did not respond to external query, but domain is accessible via HTTP. This may indicate DNS server restriction rather than blocking. For 100% accuracy, use VPS on ${isp_name} network.`
+            });
+          }
+        } catch (httpError) {
+          // HTTP check also failed or timed out
+        }
+        
+        // Both DNS and HTTP failed - likely actually blocked
+        console.warn(`DNS and HTTP check failed for ${isp_name} - treating as BLOCKED`);
         
         return NextResponse.json({
           isp: isp_name,
@@ -186,7 +216,7 @@ export async function POST(req: Request) {
           details: `DNS query timeout to ${dnsServer} - domain likely blocked by ${isp_name}`,
           dns_server: dnsServer,
           source: 'udp-timeout',
-          note: `ISP DNS server (${isp_name}) did not respond. This usually indicates the domain is blocked. Railway supports UDP, but checking from external IP may have limitations.`
+          note: `ISP DNS server (${isp_name}) did not respond. HTTP check also failed - domain likely blocked.`
         });
       }
       
