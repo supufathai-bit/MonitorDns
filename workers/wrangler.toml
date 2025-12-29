@@ -5,8 +5,8 @@ compatibility_date = "2024-01-01"
 # KV Namespace (create with: wrangler kv:namespace create "SENTINEL_DATA")
 [[kv_namespaces]]
 binding = "SENTINEL_DATA"
-id = "YOUR_KV_NAMESPACE_ID"  # Replace with your KV namespace ID
-preview_id = "YOUR_PREVIEW_KV_NAMESPACE_ID"  # Replace with your preview KV namespace ID
+id = "a62456a79f7b4522bb4d9ccabb16b86e"  # Production KV namespace ID
+# preview_id = "..."  # Optional - create preview namespace if needed
 
 # Optional: API Key for authentication
 # [vars]
