@@ -37,18 +37,50 @@ export const DomainCard: React.FC<DomainCardProps> = ({ domain, onDelete, onRefr
     }
   };
 
+  const handleISPStatusOverride = (isp: ISP, currentStatus: Status) => {
+    // Toggle between ERROR -> ACTIVE -> BLOCKED -> ERROR
+    let newStatus: Status;
+    if (currentStatus === Status.ERROR) {
+      newStatus = Status.ACTIVE;
+    } else if (currentStatus === Status.ACTIVE) {
+      newStatus = Status.BLOCKED;
+    } else {
+      newStatus = Status.ERROR;
+    }
+
+    const updatedResults = { ...domain.results };
+    updatedResults[isp] = {
+      ...updatedResults[isp],
+      status: newStatus,
+      manualOverride: true,
+      details: 'Manually set by user'
+    };
+
+    onUpdate(domain.id, { results: updatedResults });
+  };
+
   const renderISPBadge = (result: ISPResult) => {
     const isBlocked = result.status === Status.BLOCKED;
     const isPending = result.status === Status.PENDING;
     const isError = result.status === Status.ERROR;
+    const isManual = result.manualOverride;
 
     let borderColor = 'border-gray-700';
     if (isBlocked) borderColor = 'border-neon-red/50 bg-neon-red/10';
     else if (!isPending && !isError) borderColor = 'border-neon-green/30 bg-neon-green/5';
+    else if (isError) borderColor = 'border-yellow-500/30 bg-yellow-500/10';
 
     return (
-      <div key={result.isp} className={`flex flex-col items-center justify-center p-3 rounded-lg border ${borderColor} transition-all duration-300`}>
-        <span className="text-[10px] uppercase font-bold text-gray-400 mb-2 tracking-wider">{result.isp}</span>
+      <div 
+        key={result.isp} 
+        className={`flex flex-col items-center justify-center p-3 rounded-lg border ${borderColor} transition-all duration-300 cursor-pointer hover:border-neon-blue/50 ${isManual ? 'ring-2 ring-neon-blue/30' : ''}`}
+        onClick={() => handleISPStatusOverride(result.isp, result.status)}
+        title={isManual ? 'Manually set - Click to change' : 'Click to manually set status'}
+      >
+        <span className="text-[10px] uppercase font-bold text-gray-400 mb-2 tracking-wider flex items-center gap-1">
+          {result.isp}
+          {isManual && <span className="text-neon-blue text-[8px]">✎</span>}
+        </span>
         
         {isPending ? (
            <div className="w-6 h-6 border-2 border-neon-blue border-t-transparent rounded-full animate-spin"></div>
@@ -72,9 +104,9 @@ export const DomainCard: React.FC<DomainCardProps> = ({ domain, onDelete, onRefr
                 </span>
             )}
             
-            {result.details && result.details.includes('HTTP accessible') && (
+            {isError && !isManual && (
                 <span className="text-[8px] text-yellow-400 mt-1 italic text-center px-1">
-                    ⚠️ May not reflect actual ISP blocking
+                    Click to set
                 </span>
             )}
            </div>

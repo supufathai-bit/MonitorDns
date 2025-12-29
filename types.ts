@@ -19,6 +19,7 @@ export interface ISPResult {
   ip?: string;
   latency?: number;
   details?: string;
+  manualOverride?: boolean; // True if user manually set this status
 }
 
 export interface Domain {

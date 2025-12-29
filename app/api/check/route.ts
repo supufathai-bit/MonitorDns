@@ -109,7 +109,38 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Hostname required' }, { status: 400 });
     }
 
-    // Get DNS server for ISP
+    // Check if DNS Resolver Service URL is configured
+    const resolverServiceUrl = process.env.DNS_RESOLVER_SERVICE_URL;
+    
+    // If resolver service is configured, use it for accurate checking
+    if (resolverServiceUrl && isp_name !== 'Global (Google)') {
+      try {
+        const resolverResponse = await fetch(`${resolverServiceUrl}/api/check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hostname, isp_name }),
+          signal: AbortSignal.timeout(15000)
+        });
+
+        if (resolverResponse.ok) {
+          const resolverData = await resolverResponse.json();
+          return NextResponse.json({
+            isp: resolverData.isp || isp_name,
+            status: resolverData.status,
+            ip: resolverData.ip || '',
+            latency: resolverData.latency,
+            details: resolverData.details || `Queried via DNS Resolver Service`,
+            dns_server: resolverData.dns_server,
+            source: resolverData.source || 'resolver-service'
+          });
+        }
+      } catch (resolverError: any) {
+        console.warn('DNS Resolver Service unavailable, falling back to local UDP:', resolverError.message);
+        // Fall through to local UDP check
+      }
+    }
+
+    // Fallback: Local UDP check (less accurate from external IP)
     const dnsServer = ISP_DNS_SERVERS[isp_name] || ISP_DNS_SERVERS['Global (Google)'];
 
     try {
@@ -123,9 +154,10 @@ export async function POST(req: Request) {
         status: result.status,
         ip: result.ip,
         latency: result.latency,
-        details: `Queried ${dnsServer} directly`,
+        details: `Queried ${dnsServer} directly (may not be accurate from external IP)`,
         dns_server: dnsServer,
-        source: 'udp'
+        source: 'udp-external',
+        note: isp_name !== 'Global (Google)' ? '⚠️ Checking from external IP - may not reflect actual ISP blocking. Use DNS Resolver Service for accurate results.' : undefined
       });
 
     } catch (error: any) {
@@ -139,14 +171,7 @@ export async function POST(req: Request) {
         // 2. ISP DNS blocks external queries (firewall/restriction) - common for DTAC, NT, AIS
         // 
         // Problem: We can't distinguish between these two cases from external IP
-        // Solution: Use HTTP check as fallback to verify if domain is actually accessible
-        console.warn(`DNS query to ${dnsServer} (${isp_name}) timed out - checking via HTTP fallback`);
-        
-        // Problem: ISP DNS servers (especially AIS, DTAC, NT) often don't respond to external queries
-        // HTTP check from external IP is NOT accurate - it may pass even if domain is blocked on ISP network
-        // 
-        // Solution: Return ERROR instead of guessing
-        // Cannot determine blocking status accurately from external IP
+        // Solution: Use DNS Resolver Service on VPS for accurate results
         console.warn(`DNS query to ${dnsServer} (${isp_name}) timed out - cannot determine status from external IP`);
         
         return NextResponse.json({
@@ -156,7 +181,7 @@ export async function POST(req: Request) {
           details: `DNS query timeout - cannot determine if domain is blocked`,
           dns_server: dnsServer,
           source: 'udp-timeout',
-          note: `⚠️ ISP DNS server (${isp_name}) did not respond to external query. Cannot determine blocking status accurately. For accurate results, check from ${isp_name} network or use VPS on ${isp_name} network.`
+          note: `⚠️ ISP DNS server (${isp_name}) did not respond to external query. Cannot determine blocking status accurately. Deploy DNS Resolver Service on VPS in Thailand for accurate results.`
         });
       }
       

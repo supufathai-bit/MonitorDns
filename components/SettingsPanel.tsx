@@ -94,32 +94,36 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
             <div>
             <label className="block text-sm font-medium text-gray-400 mb-1 flex items-center">
                 <Server className="w-4 h-4 mr-2" />
-                Backend URL (Optional - สำหรับ external backend)
+                DNS Resolver Service URL (สำหรับเช็คแบบแม่นยำ)
             </label>
             <input
                 type="text"
                 name="backendUrl"
                 value={formData.backendUrl}
                 onChange={handleChange}
-                placeholder="Leave empty to use Next.js API (recommended)"
+                placeholder="https://your-vps-ip:3001 (VPS ในไทย/สิงคโปร์)"
                 className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-neon-blue focus:outline-none"
             />
             <p className="text-xs text-gray-500 mt-1">
-                Next.js API เช็คจาก ISP DNS จริงๆ (AIS, True, DTAC, NT) โดยตรงแล้ว
+                ⚠️ <strong>สำคัญ:</strong> การเช็คจาก external IP (Railway) ไม่แม่นยำ
                 <br />
-                ใส่ URL เฉพาะเมื่อต้องการใช้ external backend server
+                ✅ <strong>แนะนำ:</strong> ใช้ DNS Resolver Service บน VPS ในไทย/สิงคโปร์
+                <br />
+                📖 ดูคู่มือ: <code className="bg-gray-800 px-1 rounded">VPS_DNS_RESOLVER_SETUP.md</code>
             </p>
             </div>
         </div>
 
-        <div className="bg-green-900/20 border border-green-700/50 p-4 rounded text-sm text-green-200 flex items-start">
+        <div className="bg-yellow-900/20 border border-yellow-700/50 p-4 rounded text-sm text-yellow-200 flex items-start">
             <Server className="w-5 h-5 mr-2 flex-shrink-0" />
             <div className="space-y-1">
-                <p><strong>✅ Real ISP DNS Checking Enabled</strong></p>
-                <p className="text-xs text-green-300/70">
-                    Next.js API เช็คจาก ISP DNS servers จริงๆ (AIS, True, DTAC, NT) โดยส่ง UDP DNS query โดยตรง
+                <p><strong>⚠️ ความแม่นยำของการเช็ค DNS</strong></p>
+                <p className="text-xs text-yellow-300/70">
+                    <strong>การเช็คจาก External IP (Railway):</strong> ไม่แม่นยำ - ISP DNS servers มักไม่ตอบกลับ external queries
                     <br />
-                    ตรวจจับการบล็อกของ ISP ไทยได้แล้ว!
+                    <strong>วิธีแก้ไข:</strong> ใช้ DNS Resolver Service บน VPS ในไทย/สิงคโปร์
+                    <br />
+                    📖 ดูคู่มือ: <code className="bg-yellow-900/50 px-1 rounded">VPS_DNS_RESOLVER_SETUP.md</code>
                 </p>
             </div>
         </div>
