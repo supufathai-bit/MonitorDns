@@ -1,0 +1,184 @@
+import { NextResponse } from 'next/server';
+import dgram from 'dgram';
+import * as dnsPacket from 'dns-packet';
+
+// Use Node.js runtime (not Edge) to support UDP DNS queries
+export const runtime = 'nodejs';
+
+// ISP DNS Servers (Updated with correct IPs)
+const ISP_DNS_SERVERS: Record<string, string> = {
+  'Global (Google)': '8.8.8.8',
+  'AIS': '49.0.64.179',        // AIS Fibre Primary DNS
+  'TRUE': '203.144.207.29',    // True Primary DNS
+  'DTAC': '203.146.237.237',   // DTAC Primary DNS
+  'NT': '61.91.79.20',         // NT Primary DNS
+};
+
+// Query DNS server via UDP
+async function queryDNSServer(hostname: string, dnsServer: string, timeout: number = 10000): Promise<{ status: string; ip: string; latency: number }> {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    
+    // Create DNS query packet
+    const query = dnsPacket.encode({
+      type: 'query',
+      id: Math.floor(Math.random() * 65535),
+      flags: dnsPacket.RECURSION_DESIRED,
+      questions: [{
+        type: 'A',
+        name: hostname
+      }]
+    });
+
+    // Create UDP socket
+    const socket = dgram.createSocket('udp4');
+    let resolved = false;
+
+    const cleanup = () => {
+      if (!resolved) {
+        resolved = true;
+        try {
+          socket.close();
+        } catch (e) {
+          // Ignore close errors
+        }
+      }
+    };
+
+    // Set timeout (increased to 10 seconds for ISP DNS servers)
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      reject(new Error(`DNS query timeout after ${timeout}ms to ${dnsServer}`));
+    }, timeout);
+
+    // Handle response
+    socket.on('message', (msg) => {
+      cleanup();
+      clearTimeout(timeoutId);
+      
+      try {
+        const response = dnsPacket.decode(msg);
+        const latency = Date.now() - startTime;
+
+        // Check response code (0 = NOERROR)
+        if (response.rcode !== 'NOERROR') {
+          resolve({ status: 'BLOCKED', ip: '', latency });
+          return;
+        }
+
+        // Find A record in answers
+        const aRecord = response.answers?.find((ans: any) => ans.type === 'A');
+        
+        if (aRecord && aRecord.data) {
+          resolve({ 
+            status: 'ACTIVE', 
+            ip: aRecord.data, 
+            latency 
+          });
+        } else {
+          resolve({ status: 'BLOCKED', ip: '', latency });
+        }
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+    // Handle errors
+    socket.on('error', (err) => {
+      cleanup();
+      clearTimeout(timeoutId);
+      reject(err);
+    });
+
+    // Send query
+    socket.send(query, 53, dnsServer, (err) => {
+      if (err) {
+        cleanup();
+        clearTimeout(timeoutId);
+        reject(err);
+      }
+    });
+  });
+}
+
+export async function POST(req: Request) {
+  try {
+    const { hostname, isp_name } = await req.json();
+
+    if (!hostname) {
+      return NextResponse.json({ error: 'Hostname required' }, { status: 400 });
+    }
+
+    // Get DNS server for ISP
+    const dnsServer = ISP_DNS_SERVERS[isp_name] || ISP_DNS_SERVERS['Global (Google)'];
+
+    try {
+      // Query DNS server directly via UDP
+      // Use longer timeout for ISP DNS servers (they may be slower)
+      const timeout = isp_name === 'Global (Google)' ? 5000 : 10000;
+      const result = await queryDNSServer(hostname, dnsServer, timeout);
+
+      return NextResponse.json({
+        isp: isp_name,
+        status: result.status,
+        ip: result.ip,
+        latency: result.latency,
+        details: `Queried ${dnsServer} directly`,
+        dns_server: dnsServer,
+        source: 'udp'
+      });
+
+    } catch (error: any) {
+      // If timeout, it might mean the domain is blocked by ISP
+      // ISP DNS servers often timeout or don't respond when domain is blocked
+      const isTimeout = error.message.includes('timeout');
+      
+      if (isTimeout && isp_name !== 'Global (Google)') {
+        // Timeout from ISP DNS could mean:
+        // 1. Domain is blocked (ISP DNS doesn't respond)
+        // 2. ISP DNS blocks external queries (firewall/restriction) - common for DTAC, NT, AIS
+        // 
+        // Problem: We can't distinguish between these two cases from external IP
+        // Solution: Use HTTP check as fallback to verify if domain is actually accessible
+        console.warn(`DNS query to ${dnsServer} (${isp_name}) timed out - checking via HTTP fallback`);
+        
+        // Problem: ISP DNS servers (especially AIS, DTAC, NT) often don't respond to external queries
+        // HTTP check from external IP is NOT accurate - it may pass even if domain is blocked on ISP network
+        // 
+        // Solution: Return ERROR instead of guessing
+        // Cannot determine blocking status accurately from external IP
+        console.warn(`DNS query to ${dnsServer} (${isp_name}) timed out - cannot determine status from external IP`);
+        
+        return NextResponse.json({
+          isp: isp_name,
+          status: 'ERROR',
+          ip: '',
+          details: `DNS query timeout - cannot determine if domain is blocked`,
+          dns_server: dnsServer,
+          source: 'udp-timeout',
+          note: `⚠️ ISP DNS server (${isp_name}) did not respond to external query. Cannot determine blocking status accurately. For accurate results, check from ${isp_name} network or use VPS on ${isp_name} network.`
+        });
+      }
+      
+      // Other errors (network issues, etc.)
+      console.error(`UDP DNS query to ${dnsServer} failed:`, error.message);
+      
+      return NextResponse.json({
+        isp: isp_name,
+        status: 'ERROR',
+        ip: '',
+        details: `UDP query to ${dnsServer} failed: ${error.message}`,
+        dns_server: dnsServer,
+        source: 'error',
+        note: 'UDP query failed - this may indicate network/firewall issues or the domain is blocked'
+      }, { status: 500 });
+    }
+
+  } catch (error: any) {
+    console.error('DNS Check Error:', error);
+    return NextResponse.json({
+      status: 'ERROR',
+      details: error.message || 'Unknown error'
+    }, { status: 500 });
+  }
+}

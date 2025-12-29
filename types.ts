@@ -1,0 +1,46 @@
+export enum ISP {
+  GLOBAL = 'Global (Google)',
+  AIS = 'AIS',
+  TRUE = 'True',
+  DTAC = 'DTAC',
+  NT = 'NT',
+}
+
+export enum Status {
+  PENDING = 'PENDING',
+  ACTIVE = 'ACTIVE',
+  BLOCKED = 'BLOCKED',
+  ERROR = 'ERROR',
+}
+
+export interface ISPResult {
+  isp: ISP;
+  status: Status;
+  ip?: string;
+  latency?: number;
+  details?: string;
+}
+
+export interface Domain {
+  id: string;
+  url: string;
+  hostname: string;
+  lastCheck: number | null;
+  results: Record<ISP, ISPResult>;
+  isMonitoring: boolean;
+  telegramChatId?: string; // Optional: Override global chat ID
+}
+
+export interface AppSettings {
+  telegramBotToken: string;
+  telegramChatId: string;
+  checkInterval: number; // in minutes
+  backendUrl: string;
+}
+
+export interface LogEntry {
+  id: string;
+  timestamp: number;
+  message: string;
+  type: 'info' | 'success' | 'error' | 'alert';
+}
