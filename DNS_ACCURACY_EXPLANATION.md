@@ -56,6 +56,7 @@
    - ใช้ NT internet connection
 
 **ข้อเสีย:**
+
 - ต้องมี VPS หลายตัว (4 ตัว)
 - Cost สูงขึ้น (~$10-24/เดือน)
 
@@ -64,14 +65,17 @@
 ### วิธีที่ 2: ใช้ DNS Servers โดยตรง (ปัจจุบัน)
 
 **วิธีที่ใช้อยู่:**
+
 - Query ไปที่ ISP DNS servers โดยตรง (49.0.64.179, 203.146.237.237, etc.)
 - ใช้ VPS ใน Singapore เพื่อให้ใกล้ไทย
 
 **ข้อดี:**
+
 - Cost ต่ำ ($2.50-$6/เดือน)
 - ง่ายต่อการ setup
 
 **ข้อเสีย:**
+
 - **ไม่แม่นยำ 100%**
 - ISP DNS servers อาจ:
   - ไม่ตอบ external queries (timeout)
@@ -83,11 +87,13 @@
 ### วิธีที่ 3: HTTP Check จาก VPS (เสริม)
 
 **เพิ่ม HTTP check เพื่อยืนยัน:**
+
 - เช็ค DNS + HTTP access
 - ถ้า DNS timeout แต่ HTTP เข้าถึงได้ → อาจไม่ถูกบล็อก
 - ถ้า DNS timeout และ HTTP เข้าไม่ได้ → น่าจะถูกบล็อก
 
 **ข้อเสีย:**
+
 - HTTP check จาก VPS อาจไม่สะท้อนการบล็อกจริงบน ISP network
 - Domain อาจเข้าถึงได้จาก VPS แต่ถูกบล็อกบน ISP network
 
@@ -120,6 +126,7 @@
    - VPS NT → เช็ค NT
 
 3. **ตั้งค่าใน Railway:**
+
    ```
    DNS_RESOLVER_SERVICE_AIS=http://vps-ais-ip:3001
    DNS_RESOLVER_SERVICE_DTAC=http://vps-dtac-ip:3001
@@ -153,6 +160,7 @@ curl -I https://ufathai.win
 ### ทดสอบจากเครือข่าย ISP จริง
 
 **จากเครื่องที่ใช้ AIS:**
+
 ```bash
 # เปลี่ยน DNS เป็น AIS
 # Windows: netsh interface ip set dns "Ethernet" static 49.0.64.179
@@ -166,6 +174,7 @@ curl -I https://ufathai.win
 ```
 
 **เปรียบเทียบผลลัพธ์:**
+
 - ถ้า VPS และเครือข่าย ISP จริงให้ผลเหมือนกัน → แม่นยำ ✅
 - ถ้าไม่เหมือนกัน → ไม่แม่นยำ 100% ⚠️
 
@@ -178,6 +187,7 @@ curl -I https://ufathai.win
 **VPS ใน Singapore จะไม่แม่นยำ 100% เหมือนใช้เครือข่าย ISP จริง**
 
 **แต่:**
+
 - ✅ ดีกว่า External IP (Railway) มาก
 - ✅ สามารถเช็คได้แม่นยำ 70-90%
 - ⚠️ อาจยัง timeout บาง ISP
@@ -202,4 +212,3 @@ curl -I https://ufathai.win
 3. **ใช้วิธีผสม**
    - VPS Singapore สำหรับ ISP ที่ตอบกลับ
    - VPS ISP ไทย สำหรับ ISP ที่ไม่ตอบกลับ
-

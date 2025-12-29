@@ -11,6 +11,7 @@
 ### 1. Main Screen (Dashboard)
 
 **Layout:**
+
 ```
 ┌─────────────────────────────────┐
 │  🛡️ Sentinel DNS Monitor        │
@@ -39,6 +40,7 @@
 ```
 
 **Features:**
+
 - แสดง ISP ปัจจุบัน
 - แสดงสถานะการ sync
 - แสดง domains ที่ต้องเช็ค
@@ -50,6 +52,7 @@
 ### 2. Settings Screen
 
 **Layout:**
+
 ```
 ┌─────────────────────────────────┐
 │  ⚙️ Settings                    │
@@ -74,6 +77,7 @@
 ```
 
 **Features:**
+
 - ตั้งค่า Server URL
 - ตั้งค่า Auto Check Interval
 - เปิด/ปิด Background Service
@@ -85,6 +89,7 @@
 ### 3. Check Results Screen
 
 **Layout:**
+
 ```
 ┌─────────────────────────────────┐
 │  📊 Check Results               │
@@ -106,6 +111,7 @@
 ```
 
 **Features:**
+
 - แสดงผลการเช็ค
 - แสดง network info
 - ปุ่ม Check Again
@@ -116,6 +122,7 @@
 ### 4. Sync Status Screen
 
 **Layout:**
+
 ```
 ┌─────────────────────────────────┐
 │  📤 Sync Status                  │
@@ -137,6 +144,7 @@
 ```
 
 **Features:**
+
 - แสดง sync status
 - แสดง sync history
 - ปุ่ม Sync Now
@@ -176,30 +184,36 @@ Android App
 ### 1. Core Features
 
 **DNS Check:**
+
 - เช็ค DNS จาก ISP DNS servers
 - ตรวจจับ ISP อัตโนมัติ
 - แสดงผลลัพธ์ทันที
 
 **Auto Sync:**
+
 - เช็คอัตโนมัติตาม interval
 - Sync ผลลัพธ์ไปที่ server
 - Background service
 
 **Notifications:**
+
 - แจ้งเตือนเมื่อ domain ถูกบล็อก
 - แจ้งเตือนเมื่อ sync สำเร็จ/ล้มเหลว
 
 ### 2. Advanced Features
 
 **Multi-ISP Support:**
+
 - เช็คจากหลาย ISP (ถ้าเปลี่ยน network)
 - เก็บผลลัพธ์แยกตาม ISP
 
 **Offline Mode:**
+
 - เก็บผลลัพธ์ใน local database
 - Sync เมื่อ online
 
 **History:**
+
 - ดูประวัติการเช็ค
 - Export เป็น CSV/JSON
 
@@ -637,24 +651,28 @@ dependencies {
 ## 📝 Summary
 
 **UI Design:**
+
 - Dashboard (Main Screen)
 - Settings Screen
 - Check Results Screen
 - Sync Status Screen
 
 **Architecture:**
+
 - UI Layer
 - Service Layer
 - Data Layer
 - Utils
 
 **Key Features:**
+
 - DNS Check
 - Auto Sync
 - Notifications
 - Offline Support
 
 **Implementation:**
+
 - Kotlin
 - Room Database
 - OkHttp
@@ -663,13 +681,13 @@ dependencies {
 
 ---
 
-## 🎉 Ready to Build!
+## 🎉 Ready to Build
 
 ตอนนี้มี:
+
 - ✅ UI/UX Design
 - ✅ Architecture
 - ✅ Code Examples
 - ✅ Implementation Guide
 
 **Next:** สร้าง Android project และเริ่ม implement!
-

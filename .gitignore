@@ -62,3 +62,7 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# Cloudflare Workers (separate project)
+cloudflare-workers-api.ts
+workers/
