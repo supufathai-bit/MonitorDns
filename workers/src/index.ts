@@ -61,7 +61,7 @@ export default {
       return handleGetResults(request, env, corsHeaders);
     }
 
-    // DNS Check API (limited - Workers can't do UDP, but can return cached results)
+    // DNS Check API - Uses DoH for Global, cached results for ISP-specific
     if (url.pathname === '/api/check' && request.method === 'POST') {
       return handleDNSCheck(request, env, corsHeaders);
     }
@@ -237,6 +237,102 @@ async function handleGetResults(
 
   } catch (error: any) {
     console.error('Get results error:', error);
+    return jsonResponse(
+      { error: error.message || 'Internal server error' },
+      500,
+      corsHeaders
+    );
+  }
+}
+
+// Handle DNS Check - Uses DoH for Global, cached results for ISP-specific
+async function handleDNSCheck(
+  request: Request,
+  env: Env,
+  corsHeaders: Record<string, string>
+): Promise<Response> {
+  try {
+    const body = await request.json();
+    const { hostname, isp_name } = body;
+
+    if (!hostname) {
+      return jsonResponse({ error: 'Hostname required' }, 400, corsHeaders);
+    }
+
+    // For Global (Google), use DNS-over-HTTPS
+    if (isp_name === 'Global (Google)') {
+      try {
+        const dohUrl = `https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=A`;
+        const dohResponse = await fetch(dohUrl, {
+          headers: { 'Accept': 'application/dns-json' }
+        });
+
+        if (dohResponse.ok) {
+          const dohData = await dohResponse.json();
+          
+          if (dohData.Answer && dohData.Answer.length > 0) {
+            const ip = dohData.Answer[0].data;
+            return jsonResponse({
+              isp: 'Global (Google)',
+              status: 'ACTIVE',
+              ip: ip,
+              latency: 0,
+              details: 'Resolved via Google DoH',
+              dns_server: '8.8.8.8',
+              source: 'doh'
+            }, 200, corsHeaders);
+          } else {
+            return jsonResponse({
+              isp: 'Global (Google)',
+              status: 'BLOCKED',
+              ip: '',
+              details: 'No DNS record found',
+              dns_server: '8.8.8.8',
+              source: 'doh'
+            }, 200, corsHeaders);
+          }
+        }
+      } catch (dohError: any) {
+        console.error('DoH error:', dohError);
+        return jsonResponse({
+          isp: 'Global (Google)',
+          status: 'ERROR',
+          ip: '',
+          details: 'DoH query failed',
+          note: dohError.message
+        }, 200, corsHeaders);
+      }
+    }
+
+    // For ISP-specific checks, return cached result from mobile app
+    const cacheKey = `latest:${hostname}:${isp_name}`;
+    const cachedData = await env.SENTINEL_DATA.get(cacheKey);
+
+    if (cachedData) {
+      const result = JSON.parse(cachedData);
+      return jsonResponse({
+        isp: result.isp_name || isp_name,
+        status: result.status,
+        ip: result.ip || '',
+        latency: result.latency || 0,
+        details: `Cached result from mobile app (${new Date(result.timestamp).toLocaleString()})`,
+        dns_server: '',
+        source: 'cached-mobile-app',
+        note: '⚠️ This is a cached result. For real-time ISP DNS checking, use Android app.'
+      }, 200, corsHeaders);
+    }
+
+    // No cache - return error suggesting mobile app
+    return jsonResponse({
+      isp: isp_name,
+      status: 'ERROR',
+      ip: '',
+      details: 'No cached result available',
+      note: '⚠️ Workers cannot perform UDP DNS queries to ISP DNS servers. Please use Android app to check DNS from ISP network, or wait for mobile app to sync results.'
+    }, 200, corsHeaders);
+
+  } catch (error: any) {
+    console.error('DNS check error:', error);
     return jsonResponse(
       { error: error.message || 'Internal server error' },
       500,
