@@ -204,41 +204,45 @@ export default function Home() {
 
                         console.log(`✅ [loadResultsFromWorkers] Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
 
-                        // Sort results by timestamp (newest first) to ensure we use the latest result
-                        const sortedResults = [...hostnameResults].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                        console.log(`📅 [loadResultsFromWorkers] Sorted results by timestamp:`, sortedResults.map(r => `${r.isp_name}:${r.status} (${r.timestamp})`));
+                        // Map ISP names and group by mapped ISP, then use latest result for each ISP
+                        const ispMap: Record<string, ISP> = {
+                            'Unknown': ISP.AIS,
+                            'unknown': ISP.AIS,
+                            'AIS': ISP.AIS,
+                            'True': ISP.TRUE,
+                            'TRUE': ISP.TRUE,
+                            'true': ISP.TRUE,
+                            'DTAC': ISP.DTAC,
+                            'dtac': ISP.DTAC,
+                            'NT': ISP.NT,
+                            'nt': ISP.NT,
+                            'Global (Google)': ISP.GLOBAL,
+                            'Global': ISP.GLOBAL,
+                        };
+
+                        // Group results by mapped ISP and get latest for each ISP
+                        const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
+                        hostnameResults.forEach(workerResult => {
+                            const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
+                            const existing = resultsByMappedISP.get(mappedISP);
+                            
+                            // Use result with latest timestamp
+                            if (!existing || (workerResult.timestamp || 0) > (existing.timestamp || 0)) {
+                                resultsByMappedISP.set(mappedISP, workerResult);
+                            }
+                        });
+
+                        console.log(`📅 [loadResultsFromWorkers] Latest results by ISP:`, Array.from(resultsByMappedISP.entries()).map(([isp, r]) => `${isp}:${r.isp_name}:${r.status} (${r.timestamp})`));
 
                         // Convert Workers results to ISPResult format
                         const updatedResults = { ...domain.results };
-                        sortedResults.forEach(workerResult => {
-                            // Map ISP name to match frontend ISP enum
-                            // Mobile app might send "Unknown", "AIS", "True", "DTAC", "NT", etc.
-                            let ispName = workerResult.isp_name;
-                            
-                            // Normalize ISP name to match frontend enum
-                            const ispMap: Record<string, ISP> = {
-                                'Unknown': ISP.AIS, // Default to AIS if unknown
-                                'unknown': ISP.AIS,
-                                'AIS': ISP.AIS,
-                                'True': ISP.TRUE,
-                                'TRUE': ISP.TRUE,
-                                'true': ISP.TRUE,
-                                'DTAC': ISP.DTAC,
-                                'dtac': ISP.DTAC,
-                                'NT': ISP.NT,
-                                'nt': ISP.NT,
-                                'Global (Google)': ISP.GLOBAL,
-                                'Global': ISP.GLOBAL,
-                            };
-                            
-                            const isp = ispMap[ispName] || ISP.AIS; // Default to AIS if not mapped
-                            
-                            console.log(`🔄 [loadResultsFromWorkers] Mapping result: ${ispName} -> ${isp}, status: ${workerResult.status}`);
+                        resultsByMappedISP.forEach((workerResult, isp) => {
+                            const ispName = workerResult.isp_name;
+                            console.log(`🔄 [loadResultsFromWorkers] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
                             
                             if (updatedResults[isp]) {
-                                // Always update with the latest result (results are already sorted by timestamp)
                                 const existingResult = updatedResults[isp];
-                                console.log(`🔄 [loadResultsFromWorkers] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                console.log(`✅ [loadResultsFromWorkers] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
                                 updatedResults[isp] = {
                                     isp: isp,
                                     status: workerResult.status as Status,
@@ -679,39 +683,45 @@ export default function Home() {
 
                                     console.log(`✅ Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
 
-                                    // Sort results by timestamp (newest first) to ensure we use the latest result
-                                    const sortedResults = [...hostnameResults].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                                    console.log(`📅 [pollForResults] Sorted results by timestamp:`, sortedResults.map(r => `${r.isp_name}:${r.status} (${r.timestamp})`));
+                                    // Map ISP names and group by mapped ISP, then use latest result for each ISP
+                                    const ispMap: Record<string, ISP> = {
+                                        'Unknown': ISP.AIS,
+                                        'unknown': ISP.AIS,
+                                        'AIS': ISP.AIS,
+                                        'True': ISP.TRUE,
+                                        'TRUE': ISP.TRUE,
+                                        'true': ISP.TRUE,
+                                        'DTAC': ISP.DTAC,
+                                        'dtac': ISP.DTAC,
+                                        'NT': ISP.NT,
+                                        'nt': ISP.NT,
+                                        'Global (Google)': ISP.GLOBAL,
+                                        'Global': ISP.GLOBAL,
+                                    };
+
+                                    // Group results by mapped ISP and get latest for each ISP
+                                    const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
+                                    hostnameResults.forEach(workerResult => {
+                                        const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
+                                        const existing = resultsByMappedISP.get(mappedISP);
+                                        
+                                        // Use result with latest timestamp
+                                        if (!existing || (workerResult.timestamp || 0) > (existing.timestamp || 0)) {
+                                            resultsByMappedISP.set(mappedISP, workerResult);
+                                        }
+                                    });
+
+                                    console.log(`📅 [pollForResults] Latest results by ISP:`, Array.from(resultsByMappedISP.entries()).map(([isp, r]) => `${isp}:${r.isp_name}:${r.status} (${r.timestamp})`));
 
                                     // Convert Workers results to ISPResult format
                                     const updatedResults = { ...domain.results };
-                                    sortedResults.forEach(workerResult => {
-                                        // Map ISP name to match frontend ISP enum
-                                        let ispName = workerResult.isp_name;
-                                        
-                                        const ispMap: Record<string, ISP> = {
-                                            'Unknown': ISP.AIS,
-                                            'unknown': ISP.AIS,
-                                            'AIS': ISP.AIS,
-                                            'True': ISP.TRUE,
-                                            'TRUE': ISP.TRUE,
-                                            'true': ISP.TRUE,
-                                            'DTAC': ISP.DTAC,
-                                            'dtac': ISP.DTAC,
-                                            'NT': ISP.NT,
-                                            'nt': ISP.NT,
-                                            'Global (Google)': ISP.GLOBAL,
-                                            'Global': ISP.GLOBAL,
-                                        };
-                                        
-                                        const isp = ispMap[ispName] || ISP.AIS;
-                                        
-                                        console.log(`🔄 [pollForResults] Mapping result: ${ispName} -> ${isp}, status: ${workerResult.status}`);
+                                    resultsByMappedISP.forEach((workerResult, isp) => {
+                                        const ispName = workerResult.isp_name;
+                                        console.log(`🔄 [pollForResults] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
                                         
                                         if (updatedResults[isp]) {
-                                            // Always update with the latest result (results are already sorted by timestamp)
                                             const existingResult = updatedResults[isp];
-                                            console.log(`🔄 [pollForResults] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                            console.log(`✅ [pollForResults] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
                                             updatedResults[isp] = {
                                                 isp: isp,
                                                 status: workerResult.status as Status,
