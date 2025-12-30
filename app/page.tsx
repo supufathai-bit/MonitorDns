@@ -735,14 +735,21 @@ export default function Home() {
                                         const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
                                         const existing = resultsByMappedISP.get(mappedISP);
                                         
+                                        console.log(`🔍 [pollForResults] Processing: ${workerResult.isp_name} -> ${mappedISP}, status: ${workerResult.status}, timestamp: ${workerResult.timestamp}`);
+                                        
                                         if (!existing) {
+                                            console.log(`  ✅ First result for ${mappedISP}, setting: ${workerResult.isp_name}:${workerResult.status}`);
                                             resultsByMappedISP.set(mappedISP, workerResult);
                                         } else {
+                                            console.log(`  🔄 Comparing with existing: ${existing.isp_name}:${existing.status} (timestamp: ${existing.timestamp})`);
+                                            
                                             // Priority rules (in order):
                                             // 1. Always prefer BLOCKED over ACTIVE (BLOCKED is more accurate)
                                             if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
+                                                console.log(`  ✅ Preferring BLOCKED over ACTIVE: ${workerResult.isp_name}:${workerResult.status}`);
                                                 resultsByMappedISP.set(mappedISP, workerResult);
                                             } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
+                                                console.log(`  ⏭️ Keeping existing BLOCKED: ${existing.isp_name}:${existing.status}`);
                                                 // Keep existing BLOCKED - don't override with ACTIVE
                                             } else {
                                                 // Both have same status (both ACTIVE or both BLOCKED)
@@ -751,16 +758,21 @@ export default function Home() {
                                                 const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
                                                 
                                                 if (!newIsUnknown && existingIsUnknown) {
+                                                    console.log(`  ✅ Preferring clear ISP name: ${workerResult.isp_name} > ${existing.isp_name}`);
                                                     // New result has clear ISP name, existing is Unknown
                                                     resultsByMappedISP.set(mappedISP, workerResult);
                                                 } else if (newIsUnknown && !existingIsUnknown) {
+                                                    console.log(`  ⏭️ Keeping existing clear ISP name: ${existing.isp_name}`);
                                                     // Keep existing clear ISP name
                                                 } else {
                                                     // Both have same clarity, use latest timestamp
                                                     const existingTimestamp = existing.timestamp || 0;
                                                     const newTimestamp = workerResult.timestamp || 0;
                                                     if (newTimestamp > existingTimestamp) {
+                                                        console.log(`  ✅ Using newer timestamp: ${newTimestamp} > ${existingTimestamp}`);
                                                         resultsByMappedISP.set(mappedISP, workerResult);
+                                                    } else {
+                                                        console.log(`  ⏭️ Keeping existing (newer timestamp): ${existingTimestamp} > ${newTimestamp}`);
                                                     }
                                                 }
                                             }
