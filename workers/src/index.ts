@@ -254,12 +254,18 @@ async function handleMobileSync(
 
         } catch (kvError: any) {
             // Check if it's a KV limit error
-            if (kvError.message && kvError.message.includes('limit exceeded')) {
+            const errorMessage = kvError.message || String(kvError);
+            if (errorMessage.includes('limit exceeded') || errorMessage.includes('limit reached')) {
                 console.error('KV limit exceeded:', kvError);
                 return jsonResponse({
                     success: false,
                     error: 'KV write limit exceeded for today. Please try again tomorrow or upgrade your Cloudflare plan.',
                     message: 'Daily KV write limit reached',
+                    kvLimitExceeded: true,
+                    // Still return partial success if some results were saved
+                    partialSuccess: kvWriteCount > 0,
+                    savedCount: kvWriteCount,
+                    totalCount: results.length,
                 }, 429, corsHeaders); // 429 Too Many Requests
             }
             throw kvError; // Re-throw other errors
