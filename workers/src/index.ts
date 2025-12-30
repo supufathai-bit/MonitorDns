@@ -140,8 +140,16 @@ async function handleMobileSync(
             // Store latest result per domain+ISP (only update if changed or expired)
             // Batch all writes together to reduce operations
             const writePromises: Promise<void>[] = [];
+            let kvWriteCount = 0;
+            const MAX_KV_WRITES = 50; // Limit writes per sync to avoid hitting daily limit
 
             for (const result of results) {
+                // Stop if we're approaching the limit
+                if (kvWriteCount >= MAX_KV_WRITES) {
+                    console.warn(`Reached KV write limit (${MAX_KV_WRITES}) for this sync. Skipping remaining results.`);
+                    break;
+                }
+
                 const latestKey = `latest:${result.hostname}:${result.isp_name}`;
 
                 // Check if we need to update (only if different or missing)
@@ -151,10 +159,11 @@ async function handleMobileSync(
                 if (existingData) {
                     try {
                         const existing = JSON.parse(existingData);
-                        // Only update if status changed or timestamp is much older (5 minutes)
+                        // Only update if status changed or timestamp is much older (10 minutes)
+                        // Increased from 5 minutes to reduce writes
                         if (existing.status === result.status &&
                             existing.ip === result.ip &&
-                            (timestamp - existing.timestamp) < 300000) {
+                            (timestamp - existing.timestamp) < 600000) {
                             shouldUpdate = false;
                         }
                     } catch {
@@ -163,6 +172,7 @@ async function handleMobileSync(
                 }
 
                 if (shouldUpdate) {
+                    kvWriteCount++;
                     writePromises.push(
                         env.SENTINEL_DATA.put(latestKey, JSON.stringify({
                             ...result,
@@ -174,45 +184,58 @@ async function handleMobileSync(
                             expirationTtl: 86400 * 7, // 7 days
                         }).catch(err => {
                             console.error(`Failed to write ${latestKey}:`, err);
+                            // Check for KV limit error
+                            if (err.message && err.message.includes('limit exceeded')) {
+                                throw new Error('KV put() limit exceeded for the day.');
+                            }
                             throw err;
                         })
                     );
                 }
             }
 
-            // Store device info (only if changed)
-            const deviceKey = `device:${device_id}`;
-            const existingDevice = await env.SENTINEL_DATA.get(deviceKey);
-            let shouldUpdateDevice = true;
+            // Store device info (only if changed) - Skip if we're at limit
+            if (kvWriteCount < MAX_KV_WRITES) {
+                const deviceKey = `device:${device_id}`;
+                const existingDevice = await env.SENTINEL_DATA.get(deviceKey);
+                let shouldUpdateDevice = true;
 
-            if (existingDevice) {
-                try {
-                    const existing = JSON.parse(existingDevice);
-                    // Only update if device info changed or last sync was more than 1 hour ago
-                    if (existing.device_info?.isp === device_info.isp &&
-                        existing.device_info?.network_type === device_info.network_type &&
-                        (timestamp - (existing.last_sync || 0)) < 3600000) {
-                        shouldUpdateDevice = false;
+                if (existingDevice) {
+                    try {
+                        const existing = JSON.parse(existingDevice);
+                        // Only update if device info changed or last sync was more than 2 hours ago
+                        // Increased from 1 hour to reduce writes
+                        if (existing.device_info?.isp === device_info.isp &&
+                            existing.device_info?.network_type === device_info.network_type &&
+                            (timestamp - (existing.last_sync || 0)) < 7200000) {
+                            shouldUpdateDevice = false;
+                        }
+                    } catch {
+                        // If parse fails, update anyway
                     }
-                } catch {
-                    // If parse fails, update anyway
+                }
+
+                if (shouldUpdateDevice) {
+                    kvWriteCount++;
+                    writePromises.push(
+                        env.SENTINEL_DATA.put(deviceKey, JSON.stringify({
+                            device_id,
+                            device_info,
+                            last_sync: timestamp,
+                        })).catch(err => {
+                            console.error(`Failed to write ${deviceKey}:`, err);
+                            // Check for KV limit error
+                            if (err.message && err.message.includes('limit exceeded')) {
+                                throw new Error('KV put() limit exceeded for the day.');
+                            }
+                            throw err;
+                        })
+                    );
                 }
             }
 
-            if (shouldUpdateDevice) {
-                writePromises.push(
-                    env.SENTINEL_DATA.put(deviceKey, JSON.stringify({
-                        device_id,
-                        device_info,
-                        last_sync: timestamp,
-                    })).catch(err => {
-                        console.error(`Failed to write ${deviceKey}:`, err);
-                        throw err;
-                    })
-                );
-            }
-
             // Clear trigger flag after sync (mobile app has checked)
+            // Use delete instead of put to save KV writes (deletes don't count toward write limit the same way)
             const triggerKey = 'trigger:check';
             writePromises.push(
                 env.SENTINEL_DATA.delete(triggerKey).catch(err => {
@@ -222,7 +245,12 @@ async function handleMobileSync(
             );
 
             // Execute all writes in parallel
-            await Promise.all(writePromises);
+            if (writePromises.length > 0) {
+                await Promise.all(writePromises);
+                console.log(`Mobile sync: Saved ${kvWriteCount} results to KV (${results.length} total results)`);
+            } else {
+                console.log(`Mobile sync: No KV writes needed (all results unchanged)`);
+            }
 
         } catch (kvError: any) {
             // Check if it's a KV limit error
@@ -686,10 +714,10 @@ async function handleSaveFrontendDomains(
         const domainsKey = 'frontend:domains';
         const existingDomains = await env.SENTINEL_DATA.get(domainsKey);
         const existingData = existingDomains ? JSON.parse(existingDomains) : [];
-        
+
         // Compare domains (simple check)
         const domainsChanged = JSON.stringify(existingData) !== JSON.stringify(domains);
-        
+
         if (!domainsChanged) {
             return jsonResponse({
                 success: true,
@@ -787,10 +815,10 @@ async function handleSaveFrontendSettings(
         const settingsKey = 'frontend:settings';
         const existingSettings = await env.SENTINEL_DATA.get(settingsKey);
         const existingData = existingSettings ? JSON.parse(existingSettings) : {};
-        
+
         // Compare settings (simple check)
         const settingsChanged = JSON.stringify(existingData) !== JSON.stringify(settings);
-        
+
         if (!settingsChanged) {
             return jsonResponse({
                 success: true,
