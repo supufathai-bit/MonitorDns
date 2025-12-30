@@ -47,6 +47,7 @@ export default function Home() {
     const loadedRef = useRef(false);
     const domainsRef = useRef<Domain[]>([]);
     const settingsRef = useRef<AppSettings>(defaultSettings);
+    const kvLimitExceededRef = useRef(false); // Track KV limit status
 
     // Sync refs
     useEffect(() => { domainsRef.current = domains; }, [domains]);
@@ -233,6 +234,13 @@ export default function Home() {
         }
 
         try {
+            // Check if KV limit is exceeded - skip sync if so
+            if (kvLimitExceededRef.current) {
+                console.log('⏸️ Skipping domain sync - KV limit exceeded');
+                addLog('⏸️ Domain sync skipped (KV limit exceeded)', 'warning');
+                return;
+            }
+
             // Extract hostnames from domains
             const hostnames = domainsToSync.map(d => d.hostname);
 
@@ -274,8 +282,27 @@ export default function Home() {
                 }
             } else {
                 const errorText = await response.text();
-                addLog(`Failed to sync domains: ${response.status}`, 'error');
+                let errorData: any = null;
+                try {
+                    errorData = JSON.parse(errorText);
+                } catch {
+                    // If parsing fails, use errorText as is
+                }
+
                 console.error('❌ Failed to sync domains:', response.status, errorText);
+
+                // Check for KV limit error
+                if (response.status === 429 || (errorData && errorData.error && errorData.error.includes('limit exceeded'))) {
+                    kvLimitExceededRef.current = true; // Mark KV limit as exceeded
+                    addLog(`⚠️ KV write limit exceeded. Domain sync paused.`, 'error');
+                    addLog(`Error: ${errorData?.error || errorText}`, 'error');
+                    addLog(`Please try again tomorrow or upgrade your Cloudflare plan.`, 'error');
+                } else {
+                    addLog(`Failed to sync domains: ${response.status}`, 'error');
+                    if (errorData?.error) {
+                        addLog(`Error: ${errorData.error}`, 'error');
+                    }
+                }
             }
         } catch (error) {
             addLog('Failed to sync domains to Workers API', 'error');
@@ -416,15 +443,17 @@ export default function Home() {
                     } catch {
                         // If parsing fails, use errorText as is
                     }
-                    
+
                     console.error('Trigger error:', errorText);
                     console.error('Workers URL:', workersUrl);
                     console.error('Response status:', triggerResponse.status);
-                    
+
                     // Check for KV limit error
                     if (triggerResponse.status === 429 || (errorData && errorData.error && errorData.error.includes('limit exceeded'))) {
-                        addLog(`KV write limit exceeded for today. Please try again tomorrow.`, 'error');
+                        kvLimitExceededRef.current = true; // Mark KV limit as exceeded
+                        addLog(`⚠️ KV write limit exceeded for today. Auto-scan paused.`, 'error');
                         addLog(`Error: ${errorData?.error || errorText}`, 'error');
+                        addLog(`Please try again tomorrow or upgrade your Cloudflare plan.`, 'error');
                     } else {
                         addLog(`Failed to trigger mobile app: ${triggerResponse.status}`, 'error');
                         if (errorData?.error) {
@@ -433,9 +462,11 @@ export default function Home() {
                             addLog(`Error: ${errorText}`, 'error');
                         }
                     }
-                    
+
                     setLoading(false);
-                    addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
+                    if (!kvLimitExceededRef.current) {
+                        addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
+                    }
                     return;
                 }
 
@@ -618,6 +649,12 @@ export default function Home() {
     // Scheduler
     useEffect(() => {
         if (!loadedRef.current || domains.length === 0) return;
+        
+        // Skip auto-scan if KV limit is exceeded
+        if (kvLimitExceededRef.current) {
+            console.log('⏸️ Auto-scan paused - KV limit exceeded');
+            return;
+        }
 
         const intervalMs = settings.checkInterval * 60 * 1000;
 
