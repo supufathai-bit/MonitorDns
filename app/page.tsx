@@ -158,14 +158,15 @@ export default function Home() {
     loadResultsFromWorkers();
   }, [loadedRef.current, addLog]);
 
-  // Sync domains to Workers when component mounts (if not synced yet)
+  // Sync domains to Workers when component mounts and when domains change
   useEffect(() => {
     if (!loadedRef.current) return;
+    if (domains.length === 0) return;
 
-    const syncDomainsOnMount = async () => {
+    const syncDomainsToWorkers = async () => {
       const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
       if (!workersUrl) {
-        console.log('Workers URL not configured, skipping domains sync on mount');
+        console.log('Workers URL not configured, skipping domains sync');
         return;
       }
 
@@ -173,12 +174,8 @@ export default function Home() {
         // Extract hostnames from domains
         const hostnames = domains.map(d => d.hostname);
         
-        if (hostnames.length === 0) {
-          console.log('No domains to sync');
-          return;
-        }
-        
-        addLog(`Syncing ${hostnames.length} domains to Workers API on mount...`, 'info');
+        addLog(`Syncing ${hostnames.length} domains to Workers API...`, 'info');
+        console.log('Syncing domains to Workers:', hostnames);
         
         // Sync to Workers API
         const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
@@ -190,21 +187,32 @@ export default function Home() {
         if (response.ok) {
           const data = await response.json();
           addLog(`Successfully synced ${data.domains?.length || hostnames.length} domains to Workers API`, 'success');
-          console.log('Domains synced to Workers on mount:', data.domains || hostnames);
+          console.log('Domains synced to Workers:', data.domains || hostnames);
+          
+          // Verify sync by fetching domains back
+          const verifyResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`);
+          if (verifyResponse.ok) {
+            const verifyData = await verifyResponse.json();
+            console.log('Verified domains in Workers:', verifyData.domains);
+            if (verifyData.domains.length !== hostnames.length) {
+              addLog(`Warning: Domains count mismatch. Expected ${hostnames.length}, got ${verifyData.domains.length}`, 'error');
+            }
+          }
         } else {
           const errorText = await response.text();
-          addLog(`Failed to sync domains on mount: ${response.status}`, 'error');
-          console.error('Failed to sync domains on mount:', errorText);
+          addLog(`Failed to sync domains: ${response.status}`, 'error');
+          console.error('Failed to sync domains:', errorText);
         }
       } catch (error) {
-        addLog('Failed to sync domains to Workers API on mount', 'error');
-        console.error('Failed to sync domains on mount:', error);
+        addLog('Failed to sync domains to Workers API', 'error');
+        console.error('Failed to sync domains:', error);
       }
     };
 
-    // Sync once on mount (wait a bit for domains to load)
-    setTimeout(syncDomainsOnMount, 500);
-  }, [loadedRef.current, domains.length]);
+    // Sync when domains change (debounce to avoid too many requests)
+    const timeoutId = setTimeout(syncDomainsToWorkers, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [domains, loadedRef.current, addLog]);
 
   // Save Data on Change and Sync to Workers
   useEffect(() => {
