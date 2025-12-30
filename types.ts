@@ -40,6 +40,7 @@ export interface AppSettings {
   telegramChatId: string;
   checkInterval: number; // in minutes
   backendUrl: string;
+  workersUrl?: string; // Workers API URL for mobile app sync
 }
 
 export interface LogEntry {

@@ -22,7 +22,8 @@ const defaultSettings: AppSettings = {
     telegramBotToken: '',
     telegramChatId: '',
     checkInterval: 360, // Default to 6 hours (4 scans per day: 0:00, 6:00, 12:00, 18:00)
-    backendUrl: ''
+    backendUrl: '',
+    workersUrl: process.env.NEXT_PUBLIC_WORKERS_URL || ''
 };
 
 const createEmptyResults = (): Record<ISP, ISPResult> => {
@@ -99,7 +100,7 @@ export default function Home() {
         if (!loadedRef.current) return;
 
         const loadResultsFromWorkers = async () => {
-            const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
+            const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
 
             if (!workersUrl) {
                 console.log('Workers URL not configured, skipping results fetch');
@@ -423,7 +424,7 @@ export default function Home() {
         addLog('Starting full scan...', 'info');
 
         const currentSettings = settingsRef.current;
-        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.backendUrl;
+        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.workersUrl || currentSettings.backendUrl;
 
         if (workersUrl) {
             // Trigger mobile app to check DNS
@@ -701,13 +702,13 @@ export default function Home() {
             setNextScanTime(null);
             return;
         }
-        
+
         // Calculate next scan time
         const now = Date.now();
         const intervalMs = settings.checkInterval * 60 * 1000;
         const nextScan = now + intervalMs;
         setNextScanTime(nextScan);
-        
+
         const intervalId = setInterval(() => {
             addLog('Auto-scan interval reached', 'info');
             runAllChecks();
@@ -831,11 +832,10 @@ export default function Home() {
                                                         addLog('Auto-scan resumed (6 hours interval)', 'success');
                                                     }
                                                 }}
-                                                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                                                    settings.checkInterval > 0
+                                                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${settings.checkInterval > 0
                                                         ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/50'
                                                         : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600'
-                                                }`}
+                                                    }`}
                                                 title={settings.checkInterval > 0 ? 'Click to pause auto-scan' : 'Click to resume auto-scan'}
                                             >
                                                 {settings.checkInterval > 0 ? 'ON' : 'OFF'}
@@ -845,8 +845,8 @@ export default function Home() {
                                             <span className="text-gray-400">Next Auto-Scan:</span>
                                             <span className="text-gray-200 font-mono flex items-center">
                                                 <Clock className="w-3 h-3 mr-1 text-gray-500" />
-                                                {settings.checkInterval > 0 && nextScanTime 
-                                                    ? new Date(nextScanTime).toLocaleTimeString() 
+                                                {settings.checkInterval > 0 && nextScanTime
+                                                    ? new Date(nextScanTime).toLocaleTimeString()
                                                     : 'Paused'}
                                             </span>
                                         </div>
