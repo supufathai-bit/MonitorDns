@@ -27,11 +27,15 @@ const defaultSettings: AppSettings = {
 };
 
 const createEmptyResults = (): Record<ISP, ISPResult> => {
-    const keys = Object.values(ISP);
+    // Get unique ISP values (ISP.TRUE and ISP.DTAC have same value 'True/DTAC')
+    const uniqueISPs = Array.from(new Set(Object.values(ISP)));
     const results: any = {};
-    keys.forEach(k => {
+    uniqueISPs.forEach(k => {
         results[k] = { isp: k, status: Status.PENDING };
     });
+    // Ensure both ISP.TRUE and ISP.DTAC point to the same slot (they have same value 'True/DTAC')
+    // This allows DTAC results to be displayed in the True/DTAC slot
+    results[ISP.DTAC] = results[ISP.TRUE];
     return results;
 };
 

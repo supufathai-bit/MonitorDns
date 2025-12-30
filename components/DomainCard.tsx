@@ -207,7 +207,11 @@ export const DomainCard: React.FC<DomainCardProps> = ({ domain, onDelete, onRefr
 
       {/* Grid Badges */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
-        {Object.values(domain.results).map(renderISPBadge)}
+        {Array.from(new Set(Object.values(domain.results).map(r => r.isp))).map(isp => {
+          // Get result for this ISP (ISP.TRUE and ISP.DTAC share the same slot)
+          const result = domain.results[isp];
+          return result ? renderISPBadge(result) : null;
+        })}
       </div>
 
       {/* Technical Details / Dig Command Helper */}
