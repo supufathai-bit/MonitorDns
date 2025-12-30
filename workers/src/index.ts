@@ -824,8 +824,9 @@ async function handleGetFrontendDomains(
                 // Map D1 rows to Domain objects with all required fields
                 // Frontend expects: id, url, hostname, lastCheck, results, isMonitoring, telegramChatId
                 const domains = result.results.map((row: any) => {
-                    // Create empty results object with all ISP keys
-                    const emptyResults: Record<string, any> = {
+                    // Create empty results object matching frontend's createEmptyResults() structure
+                    // Frontend uses ISP enum: 'Global (Google)', 'AIS', 'True', 'DTAC', 'NT'
+                    const emptyResults = {
                         'Global (Google)': { isp: 'Global (Google)', status: 'PENDING' },
                         'AIS': { isp: 'AIS', status: 'PENDING' },
                         'True': { isp: 'True', status: 'PENDING' },
@@ -838,7 +839,7 @@ async function handleGetFrontendDomains(
                         hostname: row.hostname,
                         url: row.url || row.hostname,
                         lastCheck: null, // Will be populated by frontend when results are loaded
-                        results: emptyResults, // Empty results that will be populated by frontend
+                        results: emptyResults, // Empty results matching frontend structure
                         isMonitoring: row.is_monitoring === 1,
                         telegramChatId: row.telegram_chat_id || undefined,
                     };
