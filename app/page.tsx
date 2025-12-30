@@ -158,7 +158,7 @@ export default function Home() {
     loadResultsFromWorkers();
   }, [loadedRef.current, addLog]);
 
-  // Sync domains to Workers when component mounts and when domains change
+  // Sync domains to Workers when component mounts (initial sync only)
   useEffect(() => {
     if (!loadedRef.current) {
       console.log('Not loaded yet, skipping domains sync');
@@ -169,60 +169,15 @@ export default function Home() {
       return;
     }
 
-    const syncDomainsToWorkers = async () => {
-      const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
-      if (!workersUrl) {
-        addLog('Workers URL not configured. Please set Workers URL in Settings to sync domains.', 'error');
-        console.log('Workers URL not configured, skipping domains sync');
-        return;
-      }
-
-      try {
-        // Extract hostnames from domains
-        const hostnames = domains.map(d => d.hostname);
-        
-        addLog(`Syncing ${hostnames.length} domains to Workers API...`, 'info');
-        console.log('Syncing domains to Workers:', hostnames);
-        console.log('Workers URL:', workersUrl);
-        
-        // Sync to Workers API
-        const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ domains: hostnames }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          addLog(`Successfully synced ${data.domains?.length || hostnames.length} domains to Workers API`, 'success');
-          console.log('Domains synced to Workers:', data.domains || hostnames);
-          
-          // Verify sync by fetching domains back
-          const verifyResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`);
-          if (verifyResponse.ok) {
-            const verifyData = await verifyResponse.json();
-            console.log('Verified domains in Workers:', verifyData.domains);
-            if (verifyData.domains.length !== hostnames.length) {
-              addLog(`Warning: Domains count mismatch. Expected ${hostnames.length}, got ${verifyData.domains.length}`, 'error');
-            } else {
-              addLog(`Verified: Workers API has ${verifyData.domains.length} domains`, 'success');
-            }
-          }
-        } else {
-          const errorText = await response.text();
-          addLog(`Failed to sync domains: ${response.status}`, 'error');
-          console.error('Failed to sync domains:', errorText);
-        }
-      } catch (error) {
-        addLog('Failed to sync domains to Workers API', 'error');
-        console.error('Failed to sync domains:', error);
-      }
+    // Only sync on mount, not on every change (changes are handled in handleAddDomain/handleDeleteDomain)
+    const syncOnMount = async () => {
+      await syncDomainsToWorkers(domains);
     };
-
-    // Sync when domains change (debounce to avoid too many requests)
-    const timeoutId = setTimeout(syncDomainsToWorkers, 1000);
+    
+    // Sync once on mount with a small delay to ensure state is ready
+    const timeoutId = setTimeout(syncOnMount, 500);
     return () => clearTimeout(timeoutId);
-  }, [domains.length, domains.map(d => d.hostname).join(','), addLog]);
+  }, [loadedRef.current]);
 
   // Save Data on Change
   useEffect(() => {
@@ -324,7 +279,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [loadedRef.current, addLog]);
 
-  const handleAddDomain = (e: React.FormEvent) => {
+  const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUrl) return;
     
@@ -338,13 +293,113 @@ export default function Home() {
       isMonitoring: true,
     };
 
-    setDomains(prev => [...prev, newDomain]);
+    const updatedDomains = [...domainsRef.current, newDomain];
+    setDomains(updatedDomains);
     setNewUrl('');
     addLog(`Added domain: ${hostname}`, 'info');
+    
+    // Sync immediately after adding
+    await syncDomainsToWorkers(updatedDomains);
   };
 
-  const handleDeleteDomain = (id: string) => {
-    setDomains(prev => prev.filter(d => d.id !== id));
+  const handleDeleteDomain = async (id: string) => {
+    const updatedDomains = domainsRef.current.filter(d => d.id !== id);
+    const deletedDomain = domainsRef.current.find(d => d.id === id);
+    setDomains(updatedDomains);
+    
+    if (deletedDomain) {
+      addLog(`Deleted domain: ${deletedDomain.hostname}`, 'info');
+    }
+    
+    // Sync immediately after deleting
+    await syncDomainsToWorkers(updatedDomains);
+  };
+  
+  // Helper function to sync domains to Workers
+  const syncDomainsToWorkers = async (domainsToSync: Domain[]) => {
+    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
+    if (!workersUrl) {
+      addLog('Workers URL not configured. Please set Workers URL in Settings to sync domains.', 'error');
+      console.log('Workers URL not configured, skipping domains sync');
+      return;
+    }
+
+    try {
+      // Extract hostnames from domains
+      const hostnames = domainsToSync.map(d => d.hostname);
+      
+      addLog(`Syncing ${hostnames.length} domains to Workers API...`, 'info');
+      console.log('Syncing domains to Workers:', hostnames);
+      console.log('Workers URL:', workersUrl);
+      
+      // Sync to Workers API
+      const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domains: hostnames }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        addLog(`Successfully synced ${data.domains?.length || hostnames.length} domains to Workers API`, 'success');
+        console.log('Domains synced to Workers:', data.domains || hostnames);
+        
+        // Verify sync by fetching domains back
+        const verifyResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`);
+        if (verifyResponse.ok) {
+          const verifyData = await verifyResponse.json();
+          console.log('Verified domains in Workers:', verifyData.domains);
+          if (verifyData.domains.length !== hostnames.length) {
+            addLog(`Warning: Domains count mismatch. Expected ${hostnames.length}, got ${verifyData.domains.length}`, 'error');
+          } else {
+            addLog(`Verified: Workers API has ${verifyData.domains.length} domains`, 'success');
+          }
+        }
+      } else {
+        const errorText = await response.text();
+        addLog(`Failed to sync domains: ${response.status}`, 'error');
+        console.error('Failed to sync domains:', errorText);
+      }
+    } catch (error) {
+      addLog('Failed to sync domains to Workers API', 'error');
+      console.error('Failed to sync domains:', error);
+    }
+  }, [addLog]);
+
+  const handleAddDomain = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUrl) return;
+    
+    const hostname = getHostname(newUrl);
+    const newDomain: Domain = {
+      id: generateId(),
+      url: newUrl,
+      hostname,
+      lastCheck: null,
+      results: createEmptyResults(),
+      isMonitoring: true,
+    };
+
+    const updatedDomains = [...domainsRef.current, newDomain];
+    setDomains(updatedDomains);
+    setNewUrl('');
+    addLog(`Added domain: ${hostname}`, 'info');
+    
+    // Sync immediately after adding
+    await syncDomainsToWorkers(updatedDomains);
+  };
+
+  const handleDeleteDomain = async (id: string) => {
+    const updatedDomains = domainsRef.current.filter(d => d.id !== id);
+    const deletedDomain = domainsRef.current.find(d => d.id === id);
+    setDomains(updatedDomains);
+    
+    if (deletedDomain) {
+      addLog(`Deleted domain: ${deletedDomain.hostname}`, 'info');
+    }
+    
+    // Sync immediately after deleting
+    await syncDomainsToWorkers(updatedDomains);
   };
 
   const handleUpdateDomain = (id: string, updates: Partial<Domain>) => {
