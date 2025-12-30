@@ -581,20 +581,39 @@ export default function Home() {
                                     };
                                 }));
 
-                                // Check for blocked domains
-                                const blockedDomains: Array<{ domain: string; isps: string[] }> = [];
+                                // Check for blocked domains and send Telegram alerts
+                                const blockedDomains: Array<{ domain: Domain; isps: ISP[] }> = [];
                                 domainsRef.current.forEach(domain => {
                                     const blockedISPs = Object.values(domain.results)
                                         .filter(r => r.status === Status.BLOCKED)
-                                        .map(r => r.isp);
+                                        .map(r => r.isp as ISP);
                                     if (blockedISPs.length > 0) {
-                                        blockedDomains.push({ domain: domain.hostname, isps: blockedISPs });
+                                        blockedDomains.push({ domain, isps: blockedISPs });
                                     }
                                 });
 
                                 if (blockedDomains.length > 0) {
                                     blockedDomains.forEach(({ domain, isps }) => {
-                                        addLog(`${domain} BLOCKED on ${isps.join(', ')}`, 'alert');
+                                        addLog(`${domain.hostname} BLOCKED on ${isps.join(', ')}`, 'alert');
+
+                                        // Send Telegram alert if configured
+                                        const currentSettings = settingsRef.current;
+                                        const targetChatId = domain.telegramChatId || currentSettings.telegramChatId;
+
+                                        if (currentSettings.telegramBotToken && targetChatId) {
+                                            sendTelegramAlert(currentSettings.telegramBotToken, targetChatId, domain, isps)
+                                                .then(sent => {
+                                                    if (sent) {
+                                                        addLog(`Telegram alert sent for ${domain.hostname}`, 'success');
+                                                    } else {
+                                                        addLog(`Failed to send Telegram alert for ${domain.hostname}`, 'error');
+                                                    }
+                                                })
+                                                .catch(error => {
+                                                    console.error('Error sending Telegram alert:', error);
+                                                    addLog(`Error sending Telegram alert for ${domain.hostname}`, 'error');
+                                                });
+                                        }
                                     });
                                 } else {
                                     addLog('All domains are active', 'success');
