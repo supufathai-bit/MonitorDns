@@ -811,17 +811,43 @@ export default function Home() {
                                     </button>
 
                                     <div className="space-y-3 pt-4 border-t border-gray-700">
-                                        <div className="flex justify-between text-xs">
+                                        <div className="flex justify-between text-xs items-center">
                                             <span className="text-gray-400">Interval:</span>
                                             <span className="text-neon-blue font-mono">
                                                 {settings.checkInterval >= 1440 ? `${(settings.checkInterval / 60).toFixed(0)} Hours` : `${settings.checkInterval} Mins`}
                                             </span>
                                         </div>
-                                        <div className="flex justify-between text-xs">
+                                        <div className="flex justify-between text-xs items-center">
+                                            <span className="text-gray-400">Auto-Scan:</span>
+                                            <button
+                                                onClick={() => {
+                                                    if (settings.checkInterval > 0) {
+                                                        // Pause: set to 0
+                                                        setSettings(prev => ({ ...prev, checkInterval: 0 }));
+                                                        addLog('Auto-scan paused', 'info');
+                                                    } else {
+                                                        // Resume: set to default 6 hours
+                                                        setSettings(prev => ({ ...prev, checkInterval: 360 }));
+                                                        addLog('Auto-scan resumed (6 hours interval)', 'success');
+                                                    }
+                                                }}
+                                                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                                                    settings.checkInterval > 0
+                                                        ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/50'
+                                                        : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600'
+                                                }`}
+                                                title={settings.checkInterval > 0 ? 'Click to pause auto-scan' : 'Click to resume auto-scan'}
+                                            >
+                                                {settings.checkInterval > 0 ? 'ON' : 'OFF'}
+                                            </button>
+                                        </div>
+                                        <div className="flex justify-between text-xs items-center">
                                             <span className="text-gray-400">Next Auto-Scan:</span>
                                             <span className="text-gray-200 font-mono flex items-center">
                                                 <Clock className="w-3 h-3 mr-1 text-gray-500" />
-                                                {nextScanTime ? new Date(nextScanTime).toLocaleTimeString() : 'Paused'}
+                                                {settings.checkInterval > 0 && nextScanTime 
+                                                    ? new Date(nextScanTime).toLocaleTimeString() 
+                                                    : 'Paused'}
                                             </span>
                                         </div>
                                     </div>
