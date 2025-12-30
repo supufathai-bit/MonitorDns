@@ -59,6 +59,25 @@ export const DomainCard: React.FC<DomainCardProps> = ({ domain, onDelete, onRefr
     onUpdate(domain.id, { results: updatedResults });
   };
 
+  // Get display name for ISP (separate True and DTAC even though they have same enum value)
+  const getISPDisplayName = (result: ISPResult, index: number, allResults: ISPResult[]): string => {
+    // Check if this result is from the 'DTAC' string key slot
+    const resultKeys = Object.keys(domain.results);
+    const dtacKeyIndex = resultKeys.indexOf('DTAC');
+    const trueKeyIndex = resultKeys.indexOf('True');
+    
+    // If we're iterating and find DTAC key, use that to identify DTAC slot
+    if (dtacKeyIndex !== -1 && index === dtacKeyIndex) {
+      return 'DTAC';
+    } else if (trueKeyIndex !== -1 && index === trueKeyIndex) {
+      return 'True';
+    } else if (result.isp === ISP.GLOBAL) {
+      return 'Global (Google)';
+    } else {
+      return result.isp; // AIS, NT, etc.
+    }
+  };
+
   const renderISPBadge = (result: ISPResult) => {
     const isBlocked = result.status === Status.BLOCKED;
     const isPending = result.status === Status.PENDING;
@@ -70,6 +89,8 @@ export const DomainCard: React.FC<DomainCardProps> = ({ domain, onDelete, onRefr
     else if (!isPending && !isError) borderColor = 'border-neon-green/30 bg-neon-green/5';
     else if (isError) borderColor = 'border-yellow-500/30 bg-yellow-500/10';
 
+    const displayName = getISPDisplayName(result.isp);
+
     return (
       <div 
         key={result.isp} 
@@ -78,7 +99,7 @@ export const DomainCard: React.FC<DomainCardProps> = ({ domain, onDelete, onRefr
         title={isManual ? 'Manually set - Click to change' : 'Click to manually set status'}
       >
         <span className="text-[10px] uppercase font-bold text-gray-400 mb-2 tracking-wider flex items-center gap-1">
-          {result.isp}
+          {displayName}
           {isManual && <span className="text-neon-blue text-[8px]">✎</span>}
         </span>
         
