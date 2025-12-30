@@ -2,8 +2,8 @@
 
 ## ✅ สถานะ
 
-- ✅ Frontend: https://monitordns.pages.dev/
-- ✅ Workers: https://monitordnswoker.snowwhite04-01x.workers.dev
+- ✅ Frontend: <https://monitordns.pages.dev/>
+- ✅ Workers: <https://monitordnswoker.snowwhite04-01x.workers.dev>
 
 ---
 
@@ -12,11 +12,13 @@
 ### 1. Test Get Domains
 
 **เปิดใน browser หรือใช้ curl:**
+
 ```
 https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ```
 
 **ผลลัพธ์ที่คาดหวัง:**
+
 ```json
 {
   "success": true,
@@ -29,6 +31,7 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ### 2. Test Mobile Sync (POST)
 
 **ใช้ curl หรือ Postman:**
+
 ```bash
 curl -X POST https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync \
   -H "Content-Type: application/json" \
@@ -52,6 +55,7 @@ curl -X POST https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync
 ```
 
 **ผลลัพธ์ที่คาดหวัง:**
+
 ```json
 {
   "success": true,
@@ -64,11 +68,13 @@ curl -X POST https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync
 ### 3. Test Get Results
 
 **เปิดใน browser:**
+
 ```
 https://monitordnswoker.snowwhite04-01x.workers.dev/api/results
 ```
 
 **ผลลัพธ์ที่คาดหวัง:**
+
 ```json
 {
   "success": true,
@@ -101,7 +107,7 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/results
 
 ### Step 2: ตรวจสอบ Frontend
 
-1. เปิด https://monitordns.pages.dev/
+1. เปิด <https://monitordns.pages.dev/>
 2. ควรเห็นหน้าเว็บปกติ
 3. เพิ่ม domain และทดสอบ
 
@@ -111,9 +117,10 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/results
 
 ### 1. เปิดเว็บ
 
-เปิด: https://monitordns.pages.dev/
+เปิด: <https://monitordns.pages.dev/>
 
 **ควรเห็น:**
+
 - Dashboard
 - Form สำหรับเพิ่ม domain
 - Status Control section
@@ -130,6 +137,7 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/results
 2. ดูผลลัพธ์
 
 **หมายเหตุ:** ตอนนี้ DNS check อาจไม่ทำงานเพราะ:
+
 - Frontend เป็น static site (ไม่มี API routes)
 - ต้องใช้ Workers API หรือ Android app
 
@@ -140,6 +148,7 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/results
 ### 1. ตั้งค่า Server URL
 
 ใน Android app Settings:
+
 - Server URL: `https://monitordnswoker.snowwhite04-01x.workers.dev`
 
 ### 2. เช็ค DNS
@@ -158,16 +167,19 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/results
 ## ✅ Checklist
 
 ### Workers API
+
 - [ ] Test `/api/mobile-sync/domains` - ควรได้ domains list
 - [ ] Test `/api/mobile-sync` (POST) - ควรรับข้อมูลสำเร็จ
 - [ ] Test `/api/results` - ควรได้ results
 
 ### Frontend
+
 - [ ] เปิดเว็บได้
 - [ ] เพิ่ม domain ได้
 - [ ] UI แสดงผลปกติ
 
 ### Integration
+
 - [ ] เพิ่ม `NEXT_PUBLIC_WORKERS_URL` ใน Pages
 - [ ] Frontend เชื่อมต่อ Workers ได้
 
@@ -176,12 +188,14 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/results
 ## 🎯 สรุป
 
 **ตอนนี้:**
+
 - ✅ Workers API ทำงานแล้ว
 - ✅ Frontend ทำงานแล้ว
 - ⏳ ต้องเชื่อมต่อ Frontend กับ Workers
 - ⏳ ต้องสร้าง Android app
 
 **Next Steps:**
+
 1. เพิ่ม `NEXT_PUBLIC_WORKERS_URL` ใน Pages
 2. Test Frontend
 3. สร้าง Android app
@@ -193,4 +207,3 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/results
 - **Workers URL:** ใช้สำหรับ Android app และ Frontend
 - **Frontend:** แสดงผลลัพธ์จาก Workers
 - **Android App:** เช็ค DNS และ sync กับ Workers
-

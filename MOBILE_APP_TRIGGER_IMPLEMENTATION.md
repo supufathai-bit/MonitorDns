@@ -14,13 +14,13 @@
 
 ## 🔧 วิธีแก้ไข
 
-### Mobile App ต้องทำ:
+### Mobile App ต้องทำ
 
 1. **Polling Trigger** (ทุก 30 วินาที) - **สำคัญมาก!**
 2. **เช็ค DNS** เมื่อเห็น trigger
 3. **Sync ผลลัพธ์** กลับไปที่ Workers
 
-### ⚠️ ถ้าไม่ทำ:
+### ⚠️ ถ้าไม่ทำ
 
 - Frontend จะ timeout หลัง 30 วินาที
 - ผู้ใช้ต้องกด "CHECK NOW" ในแอพเอง
@@ -158,7 +158,7 @@ class DNSCheckForegroundService : Service() {
 
 ## 🔄 Flow การทำงาน
 
-### เมื่อ Frontend กด "RUN FULL SCAN":
+### เมื่อ Frontend กด "RUN FULL SCAN"
 
 ```
 1. Frontend
@@ -186,6 +186,7 @@ class DNSCheckForegroundService : Service() {
 ### Polling Interval
 
 **แนะนำ:**
+
 - **Background Service:** ทุก 30 วินาที
 - **Foreground:** ทุก 10-15 วินาที
 - **เมื่อเปิด app:** เช็คทันที
@@ -203,11 +204,13 @@ class DNSCheckForegroundService : Service() {
 ### 1. ทดสอบ Trigger API
 
 **เปิดใน browser:**
+
 ```
 https://monitordnswoker.snowwhite04-01x.workers.dev/api/trigger-check
 ```
 
 **ควรเห็น:**
+
 ```json
 {
   "success": true,
@@ -220,9 +223,11 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/trigger-check
 1. เปิดหน้าเว็บ
 2. กด "RUN FULL SCAN"
 3. ตรวจสอบ Workers API:
+
    ```
    GET /api/trigger-check
    ```
+
    **ควรเห็น:** `{ "triggered": true }`
 
 ### 3. ทดสอบ Mobile App
@@ -236,7 +241,8 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/trigger-check
 
 ## 📋 Checklist
 
-### Mobile App Implementation:
+### Mobile App Implementation
+
 - [ ] เพิ่ม `getTriggerCheck()` ใน ApiClient
 - [ ] เพิ่ม TriggerCheckResponse data model
 - [ ] Implement Background Service หรือ WorkManager
@@ -251,10 +257,12 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/trigger-check
 ### 1. Polling Frequency
 
 **ไม่บ่อยเกินไป:**
+
 - ทุก 30 วินาที (ประหยัด battery)
 - หรือทุก 15 นาที (WorkManager)
 
 **ไม่ช้าเกินไป:**
+
 - ถ้าช้าเกินไป → Frontend timeout (30 วินาที)
 
 ### 2. Error Handling
@@ -284,14 +292,15 @@ if (!isNetworkAvailable()) {
 ## 🎯 สรุป
 
 **ตอนนี้:**
+
 - ✅ Frontend ส่ง trigger ไปที่ Workers
 - ✅ Workers เก็บ trigger flag
 - ⏳ **Mobile App ต้อง implement trigger polling**
 
 **Next:**
+
 - Mobile App ต้อง polling `/api/trigger-check`
 - Mobile App ต้องเช็ค DNS เมื่อเห็น trigger
 - Mobile App ต้อง sync ผลลัพธ์กลับไปที่ Workers
 
 **ดู `ANDROID_APP_DESIGN.md` สำหรับ code examples เพิ่มเติม!** 🎉
-

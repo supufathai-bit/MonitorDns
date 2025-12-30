@@ -70,7 +70,7 @@ export default function Home() {
             const loadData = async () => {
                 try {
                     const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
-                    
+
                     if (workersUrl) {
                         // Try to load from Workers API (shared storage)
                         try {
@@ -270,7 +270,7 @@ export default function Home() {
         if (loadedRef.current) {
             // Save to localStorage (backup)
             localStorage.setItem('sentinel_domains', JSON.stringify(domains));
-            
+
             // Save to Workers API (shared storage)
             const saveToWorkers = async () => {
                 const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
@@ -300,7 +300,7 @@ export default function Home() {
         if (loadedRef.current) {
             // Save to localStorage (backup)
             localStorage.setItem('sentinel_settings', JSON.stringify(settings));
-            
+
             // Save to Workers API (shared storage)
             const saveToWorkers = async () => {
                 const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
@@ -358,7 +358,7 @@ export default function Home() {
             console.log('📤 Workers URL:', workersUrl);
             console.log('📤 Request body:', JSON.stringify({ domains: hostnames }));
 
-            // Sync to Workers API
+            // Sync to Workers API - Use the same endpoint mobile app uses
             const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

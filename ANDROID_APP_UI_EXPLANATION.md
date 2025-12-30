@@ -3,6 +3,7 @@
 ## 📱 UI ที่เห็นในรูป
 
 จากรูปภาพที่เห็น:
+
 - **Server URL**: `https://monitordnswoker.snowwhite04-01x.worker`
 - **Interval**: `1 hour`
 
@@ -10,7 +11,7 @@
 
 ## 🎨 UI ที่ออกแบบไว้ (ตาม ANDROID_APP_DESIGN.md)
 
-### Settings Screen ควรมี:
+### Settings Screen ควรมี
 
 ```
 ┌─────────────────────────────────┐
@@ -39,7 +40,7 @@
 
 ## 🤔 ทำไม UI เป็นแบบนี้?
 
-### สาเหตุที่เป็นไปได้:
+### สาเหตุที่เป็นไปได้
 
 1. **ยังพัฒนาไม่เสร็จ**
    - แอพอาจจะยังอยู่ในขั้นตอน development
@@ -58,26 +59,32 @@
 ## ✅ Features ที่ควรมี (ตาม Design)
 
 ### 1. **Server URL** ✅ (มีแล้ว)
+
 - ตั้งค่า Workers API URL
 - ใช้สำหรับ sync ผลลัพธ์
 
 ### 2. **Auto Check Interval** ✅ (มีแล้ว)
+
 - ตั้งค่าความถี่ในการเช็ค
 - เช่น 1 hour, 6 hours, etc.
 
 ### 3. **Background Service** ❌ (ยังไม่มี)
+
 - เปิด/ปิด background service
 - ให้เช็คอัตโนมัติแม้ไม่ได้เปิดแอพ
 
 ### 4. **Notifications** ❌ (ยังไม่มี)
+
 - เปิด/ปิด notifications
 - แจ้งเตือนเมื่อ domain ถูก block
 
 ### 5. **Show Device Info** ❌ (ยังไม่มี)
+
 - แสดง device ID, ISP, network type
 - สำหรับ debugging
 
 ### 6. **Test Connection** ❌ (ยังไม่มี)
+
 - ปุ่มทดสอบการเชื่อมต่อ
 - ตรวจสอบว่า Server URL ถูกต้องหรือไม่
 
@@ -85,7 +92,7 @@
 
 ## 💡 คำแนะนำ
 
-### ถ้าต้องการเพิ่ม Features:
+### ถ้าต้องการเพิ่ม Features
 
 1. **Background Service Toggle**
    - เพิ่ม Switch/Toggle สำหรับเปิด/ปิด background service
@@ -107,7 +114,8 @@
 
 ## 📋 สรุป
 
-### UI ปัจจุบัน:
+### UI ปัจจุบัน
+
 - ✅ Server URL
 - ✅ Interval
 - ❌ Background Service toggle
@@ -115,7 +123,8 @@
 - ❌ Device Info
 - ❌ Test Connection button
 
-### UI ที่ควรมี (ตาม Design):
+### UI ที่ควรมี (ตาม Design)
+
 - ✅ Server URL
 - ✅ Interval
 - ✅ Background Service toggle
@@ -128,9 +137,9 @@
 ## 🎯 คำตอบ
 
 **UI ปัจจุบันมีแค่ 2 fields** เพราะ:
+
 - อาจจะยังพัฒนาไม่เสร็จ
 - หรือออกแบบให้เรียบง่ายก่อน
 - จะเพิ่ม features อื่นๆ ใน version ถัดไป
 
 **ถ้าต้องการเพิ่ม features** → ต้องพัฒนาเพิ่มเติมตาม ANDROID_APP_DESIGN.md
-

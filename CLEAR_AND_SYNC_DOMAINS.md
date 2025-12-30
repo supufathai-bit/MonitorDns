@@ -3,6 +3,7 @@
 ## ❌ ปัญหา
 
 Workers API ยัง return 4 domains (รวม `google.com`):
+
 ```json
 {
   "success": true,
@@ -20,6 +21,7 @@ Workers API ยัง return 4 domains (รวม `google.com`):
 **KV Storage ยังไม่มี domains หรือ Frontend ยังไม่ได้ sync**
 
 Workers API ใช้ logic:
+
 - ถ้ามี domains ใน KV → return domains จาก KV
 - ถ้าไม่มี → return default (4 domains รวม google.com)
 
@@ -29,39 +31,43 @@ Workers API ใช้ logic:
 
 ### วิธีที่ 1: Clear KV Storage แล้ว Sync ใหม่ (แนะนำ)
 
-#### ขั้นตอน:
+#### ขั้นตอน
 
 1. **Clear KV Storage:**
+
    ```bash
    cd workers
    wrangler kv key delete "domains:list" --namespace-id=a62456a79f7b4522bb4d9ccabb16b86e
    ```
 
-2. **เปิดหน้าเว็บ:** https://monitordns.pages.dev/
+2. **เปิดหน้าเว็บ:** <https://monitordns.pages.dev/>
 
 3. **ดู SYSTEM LOGS:**
    - ควรเห็น: "Syncing 3 domains to Workers API..."
    - ควรเห็น: "Successfully synced 3 domains to Workers API"
 
 4. **ตรวจสอบ Workers API:**
+
    ```
    https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
    ```
+
    **ควรเห็น:** 3 domains (ไม่มี google.com)
 
 ---
 
 ### วิธีที่ 2: Manual Sync via Console
 
-#### ขั้นตอน:
+#### ขั้นตอน
 
-1. **เปิดหน้าเว็บ:** https://monitordns.pages.dev/
+1. **เปิดหน้าเว็บ:** <https://monitordns.pages.dev/>
 
 2. **กด F12** (เปิด Developer Tools)
 
 3. **ไปที่ Console tab**
 
 4. **รัน script นี้:**
+
    ```javascript
    // 1. ตรวจสอบ domains ปัจจุบัน
    const domains = JSON.parse(localStorage.getItem('sentinel_domains') || '[]');
@@ -100,9 +106,9 @@ Workers API ใช้ logic:
 
 ### วิธีที่ 3: ตรวจสอบ Workers URL
 
-#### ขั้นตอน:
+#### ขั้นตอน
 
-1. **เปิดหน้าเว็บ:** https://monitordns.pages.dev/
+1. **เปิดหน้าเว็บ:** <https://monitordns.pages.dev/>
 
 2. **ไปที่ Settings**
 
@@ -122,11 +128,13 @@ Workers API ใช้ logic:
 ### 1. ตรวจสอบ Workers API
 
 **เปิดใน browser:**
+
 ```
 https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ```
 
 **ควรเห็น:**
+
 ```json
 {
   "success": true,
@@ -146,9 +154,10 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 
 ### 2. ตรวจสอบ Frontend Logs
 
-**เปิดหน้าเว็บ:** https://monitordns.pages.dev/
+**เปิดหน้าเว็บ:** <https://monitordns.pages.dev/>
 
 **ดู SYSTEM LOGS:**
+
 - "Syncing 3 domains to Workers API..."
 - "Successfully synced 3 domains to Workers API"
 - "Verified domains in Workers: [...]"
@@ -158,6 +167,7 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ### 3. ตรวจสอบ Console
 
 **กด F12 → Console:**
+
 - ควรเห็น: "Syncing domains to Workers: [...]"
 - ควรเห็น: "Domains synced to Workers: [...]"
 - ควรเห็น: "Verified domains in Workers: [...]"
@@ -174,6 +184,7 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ### 2. ตรวจสอบ Network Tab
 
 **กด F12 → Network:**
+
 - ดู request: `POST /api/mobile-sync/domains`
 - ตรวจสอบว่า request ส่งไปหรือไม่
 - ตรวจสอบ response status (ควรเป็น 200)
@@ -181,6 +192,7 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ### 3. ตรวจสอบ CORS
 
 **ถ้าเห็น CORS error:**
+
 - ตรวจสอบ Workers API CORS headers
 - ตรวจสอบว่า Workers API รองรับ POST `/api/mobile-sync/domains`
 
@@ -201,6 +213,7 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ### 1. Debug Sync
 
 **เปิด Console (F12):**
+
 ```javascript
 // ตรวจสอบ domains
 const domains = JSON.parse(localStorage.getItem('sentinel_domains') || '[]');
@@ -223,6 +236,7 @@ fetch(`${workersUrl}/api/mobile-sync/domains`, {
 ### 2. Verify KV Storage
 
 **ใช้ Wrangler CLI:**
+
 ```bash
 cd workers
 wrangler kv key get "domains:list" --namespace-id=a62456a79f7b4522bb4d9ccabb16b86e
@@ -235,13 +249,14 @@ wrangler kv key get "domains:list" --namespace-id=a62456a79f7b4522bb4d9ccabb16b8
 ## 🎉 สรุป
 
 **วิธีแก้ไข:**
+
 1. ✅ Clear KV storage
 2. ✅ เปิดหน้าเว็บ → sync domains อัตโนมัติ
 3. ✅ ตรวจสอบ Workers API → ควรเห็น 3 domains
 
 **หรือ:**
+
 1. ✅ ใช้ Console script → manual sync
 2. ✅ ตรวจสอบ Workers API → ควรเห็น 3 domains
 
 **ระบบพร้อมแล้ว!** 🎉
-

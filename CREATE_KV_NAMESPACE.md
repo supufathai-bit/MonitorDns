@@ -35,6 +35,7 @@ wrangler kv:namespace create "SENTINEL_DATA" --preview
 ### Step 4: บันทึก ID ที่ได้
 
 **ตัวอย่าง output:**
+
 ```
 🌀  Creating namespace with title "SENTINEL_DATA"
 ✨  Success!
@@ -61,7 +62,7 @@ preview_id = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"  # Preview ID
 
 ### Step 1: ไปที่ Workers & Pages
 
-1. เปิด https://dash.cloudflare.com
+1. เปิด <https://dash.cloudflare.com>
 2. เลือก account ของคุณ
 3. ไปที่ **Workers & Pages** → **KV**
 
@@ -79,6 +80,7 @@ preview_id = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"  # Preview ID
 ### Step 4: อัปเดต wrangler.toml
 
 แก้ไข `workers/wrangler.toml`:
+
 - ใส่ ID ที่ได้จาก Dashboard
 
 ---
@@ -116,6 +118,7 @@ preview_id = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"  # Preview ID (optional)
 
 1. **อัปเดต wrangler.toml** ด้วย ID ที่ได้
 2. **Deploy Workers:**
+
    ```bash
    cd workers
    wrangler deploy
@@ -154,4 +157,3 @@ preview_id = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"  # Preview ID (optional)
 
 - [Cloudflare KV Documentation](https://developers.cloudflare.com/workers/runtime-apis/kv/)
 - [Wrangler KV Commands](https://developers.cloudflare.com/workers/wrangler/commands/#kv)
-

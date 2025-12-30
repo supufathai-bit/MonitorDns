@@ -2,7 +2,7 @@
 
 ## ✅ สถานะปัจจุบัน
 
-- ✅ Frontend ทำงานแล้ว: https://monitordns.pages.dev/
+- ✅ Frontend ทำงานแล้ว: <https://monitordns.pages.dev/>
 - ⏳ Workers ยังไม่ได้ deploy
 
 ---
@@ -56,12 +56,14 @@ wrangler kv:namespace create "SENTINEL_DATA" --preview
 ```
 
 **บันทึก ID ที่ได้:**
+
 - Production ID: `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
 - Preview ID: `yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy`
 
 #### Step 6: อัปเดต wrangler.toml
 
 แก้ไข `workers/wrangler.toml`:
+
 ```toml
 [[kv_namespaces]]
 binding = "SENTINEL_DATA"
@@ -118,4 +120,3 @@ wrangler deploy
 - **Dashboard:** กด Deploy ได้เลย แต่ต้องสร้าง KV namespace ก่อน
 - **CLI:** แนะนำ เพราะแน่ใจกว่าและเห็น error ชัดเจน
 - **KV Namespace:** ต้องสร้างก่อน deploy ครั้งแรก
-

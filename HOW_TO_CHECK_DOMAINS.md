@@ -2,16 +2,18 @@
 
 ## 🧪 วิธีที่ 1: เปิด Workers API ใน Browser (ง่ายที่สุด)
 
-### ขั้นตอน:
+### ขั้นตอน
 
 1. **เปิด Browser** (Chrome, Firefox, etc.)
 
 2. **เปิด URL:**
+
    ```
    https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
    ```
 
 3. **ดูผลลัพธ์:**
+
    ```json
    {
      "success": true,
@@ -34,12 +36,14 @@
 
 ## 🧪 วิธีที่ 2: ใช้ PowerShell/Command Line
 
-### PowerShell:
+### PowerShell
+
 ```powershell
 Invoke-RestMethod -Uri "https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains" | ConvertTo-Json
 ```
 
-### หรือใช้ curl:
+### หรือใช้ curl
+
 ```bash
 curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ```
@@ -48,9 +52,9 @@ curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 
 ## 🧪 วิธีที่ 3: ดูใน Frontend Logs
 
-### ขั้นตอน:
+### ขั้นตอน
 
-1. **เปิดหน้าเว็บ:** https://monitordns.pages.dev/
+1. **เปิดหน้าเว็บ:** <https://monitordns.pages.dev/>
 
 2. **ดู SYSTEM LOGS:**
    - ควรเห็น: "Syncing X domains to Workers API..."
@@ -58,6 +62,7 @@ curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
    - X = จำนวน domains
 
 3. **ตัวอย่าง:**
+
    ```
    12:30:45 PM - Syncing 3 domains to Workers API...
    12:30:45 PM - Successfully synced 3 domains to Workers API
@@ -67,7 +72,7 @@ curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 
 ## 🧪 วิธีที่ 4: ดูใน Mobile App
 
-### ขั้นตอน:
+### ขั้นตอน
 
 1. **เปิด Android App**
 
@@ -83,9 +88,9 @@ curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 
 ## 🧪 วิธีที่ 5: ใช้ Browser Developer Tools
 
-### ขั้นตอน:
+### ขั้นตอน
 
-1. **เปิดหน้าเว็บ:** https://monitordns.pages.dev/
+1. **เปิดหน้าเว็บ:** <https://monitordns.pages.dev/>
 
 2. **กด F12** (เปิด Developer Tools)
 
@@ -99,7 +104,8 @@ curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 
 ## 📊 ตัวอย่างผลลัพธ์
 
-### ถ้ามี 3 domains:
+### ถ้ามี 3 domains
+
 ```json
 {
   "success": true,
@@ -113,7 +119,8 @@ curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 }
 ```
 
-### ถ้ามี 4 domains (รวม google.com):
+### ถ้ามี 4 domains (รวม google.com)
+
 ```json
 {
   "success": true,
@@ -132,7 +139,7 @@ curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 
 ## ⚠️ ถ้ายังเห็น domains เก่า
 
-### วิธีแก้ไข:
+### วิธีแก้ไข
 
 1. **Hard Refresh Frontend:**
    - กด Ctrl+Shift+R
@@ -147,11 +154,13 @@ curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
    - หรือ refresh หน้าเว็บ
 
 4. **Clear KV Storage (ถ้าจำเป็น):**
+
    ```bash
    # ใช้ Wrangler CLI
    cd workers
    wrangler kv:key delete "domains:list" --namespace-id=a62456a79f7b4522bb4d9ccabb16b86e
    ```
+
    - แล้ว refresh หน้าเว็บ → จะ sync domains ใหม่
 
 ---
@@ -168,13 +177,16 @@ curl https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 
 ## 💡 Tips
 
-### วิธีที่เร็วที่สุด:
+### วิธีที่เร็วที่สุด
+
 **เปิด URL ใน browser:**
+
 ```
 https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ```
 
-### วิธีที่แม่นยำที่สุด:
+### วิธีที่แม่นยำที่สุด
+
 **ดูใน Mobile App → Settings → TEST CONNECTION**
 
 ---
@@ -182,15 +194,16 @@ https://monitordnswoker.snowwhite04-01x.workers.dev/api/mobile-sync/domains
 ## 🎉 สรุป
 
 **วิธีเช็ค:**
+
 1. ✅ เปิด Workers API ใน browser (ง่ายที่สุด)
 2. ✅ ดู Frontend Logs
 3. ✅ ดู Mobile App Toast Message
 4. ✅ ใช้ Developer Tools
 
 **ผลลัพธ์:**
+
 - ดู `domains` array
 - นับจำนวน domains
 - ตรวจสอบว่า domains ถูกต้องหรือไม่
 
 **ระบบพร้อมแล้ว!** 🎉
-

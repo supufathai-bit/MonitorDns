@@ -9,10 +9,12 @@
 ## 💡 อธิบายง่ายๆ
 
 **KV** เหมือน **ตู้เก็บของ** ที่มี:
+
 - **Key** (กุญแจ) = ชื่อ/ที่อยู่ของข้อมูล
 - **Value** (ของ) = ข้อมูลที่เก็บ
 
 **ตัวอย่าง:**
+
 ```
 Key: "latest:ufathai.win:AIS"
 Value: {
@@ -43,6 +45,7 @@ Value: {
 ### ในโปรเจคเรา
 
 **เก็บข้อมูลจาก Android app:**
+
 ```typescript
 // เก็บผลลัพธ์
 await env.SENTINEL_DATA.put(
@@ -63,14 +66,17 @@ const data = await env.SENTINEL_DATA.get("latest:ufathai.win:AIS");
 ## 📊 ข้อมูลที่เก็บใน KV
 
 ### 1. Latest Results
+
 - Key: `latest:{hostname}:{isp}`
 - Value: ผลลัพธ์ล่าสุดของแต่ละ domain+ISP
 
 ### 2. Sync History
+
 - Key: `sync:{device_id}:{timestamp}`
 - Value: ประวัติการ sync
 
 ### 3. Device Info
+
 - Key: `device:{device_id}`
 - Value: ข้อมูล device
 
@@ -96,11 +102,13 @@ const data = await env.SENTINEL_DATA.get("latest:ufathai.win:AIS");
 ## 🎯 สรุป
 
 **KV = Key-Value Store**
+
 - เก็บข้อมูลแบบ key-value
 - ง่าย เร็ว ฟรี
 - เหมาะกับข้อมูลง่ายๆ เช่น ผลลัพธ์ DNS check
 
 **ในโปรเจคเรา:**
+
 - ใช้เก็บผลลัพธ์จาก Android app
 - ใช้เก็บ sync history
 - ใช้เก็บ device info
@@ -110,4 +118,3 @@ const data = await env.SENTINEL_DATA.get("latest:ufathai.win:AIS");
 ## 📚 เอกสารเพิ่มเติม
 
 - [Cloudflare KV Documentation](https://developers.cloudflare.com/workers/runtime-apis/kv/)
-

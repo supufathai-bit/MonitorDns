@@ -5,6 +5,7 @@
 ใช้ Android app เช็ค DNS จากเครือข่าย ISP จริงๆ แล้ว sync กับระบบ
 
 **ข้อดี:**
+
 - ✅ ไม่มีค่าใช้จ่าย (ใช้มือถือที่มีอยู่แล้ว)
 - ✅ แม่นยำ 100% (เช็คจากเครือข่าย ISP จริง)
 - ✅ ง่ายต่อการเชื่อมต่อกับระบบ
@@ -54,6 +55,7 @@ Frontend Dashboard
 **Endpoint:** `POST /api/mobile-sync`
 
 **Request Body:**
+
 ```json
 {
   "device_id": "unique-device-id",
@@ -85,6 +87,7 @@ Frontend Dashboard
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -99,6 +102,7 @@ Frontend Dashboard
 **Endpoint:** `GET /api/mobile-sync/domains`
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -193,33 +197,40 @@ suspend fun syncResults(results: List<DNSResult>) {
 ### Option 1: Push (Android → Server)
 
 **Android app ส่งผลลัพธ์ไปที่ server:**
+
 - เช็ค DNS → ส่งผลลัพธ์ทันที
 - หรือส่ง batch ตาม interval
 
 **ข้อดี:**
+
 - Real-time updates
 - ง่ายต่อการ implement
 
 **ข้อเสีย:**
+
 - ใช้ battery มากขึ้น
 - ใช้ data มากขึ้น
 
 ### Option 2: Pull (Server → Android)
 
 **Server ส่งคำสั่งให้ Android app เช็ค:**
+
 - Android app เช็ค domain ที่ server ระบุ
 - ส่งผลลัพธ์กลับ
 
 **ข้อดี:**
+
 - Server ควบคุมได้
 - ประหยัด battery
 
 **ข้อเสีย:**
+
 - ต้องมี push notification หรือ polling
 
 ### Option 3: Hybrid (แนะนำ)
 
 **ผสมทั้งสองวิธี:**
+
 - Android app เช็คอัตโนมัติตาม interval
 - Server สามารถส่งคำสั่งให้เช็คเพิ่มเติมได้
 
@@ -263,6 +274,7 @@ Frontend Dashboard
 ### 1. Device ID
 
 **ใช้ unique device ID:**
+
 ```kotlin
 fun getDeviceId(): String {
     return Settings.Secure.getString(
@@ -275,6 +287,7 @@ fun getDeviceId(): String {
 ### 2. API Authentication
 
 **เพิ่ม API key หรือ token:**
+
 ```typescript
 // app/api/mobile-sync/route.ts
 const apiKey = req.headers.get('X-API-Key');
@@ -286,6 +299,7 @@ if (apiKey !== process.env.MOBILE_APP_API_KEY) {
 ### 3. Rate Limiting
 
 **จำกัดจำนวน requests:**
+
 ```typescript
 // ใช้ middleware หรือ library เช่น express-rate-limit
 ```
@@ -436,12 +450,13 @@ syncResults(listOf(result))
 ## 🎉 สรุป
 
 **Android App Integration เป็นวิธีที่ดีที่สุดสำหรับ:**
+
 - ✅ ความแม่นยำ 100%
 - ✅ ไม่มีค่าใช้จ่าย
 - ✅ ง่ายต่อการ implement
 
 **Next Steps:**
+
 1. สร้าง Android app
 2. Implement DNS check + sync
 3. Test และ deploy
-

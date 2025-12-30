@@ -57,6 +57,7 @@ android-app/
 ### 1. ตั้งค่า Workers URL
 
 ใน Settings:
+
 - Server URL: `https://your-workers.workers.dev`
 
 ### 2. ตั้งค่า Auto Check Interval
@@ -79,4 +80,3 @@ android-app/
 
 - `ANDROID_APP_DESIGN.md` - Design guide
 - `ANDROID_APP_INTEGRATION.md` - Integration guide
-

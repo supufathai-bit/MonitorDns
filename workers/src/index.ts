@@ -296,7 +296,7 @@ async function getDomainsFromD1(env: Env): Promise<string[]> {
         const result = await env.DB.prepare(
             "SELECT hostname FROM domains WHERE is_monitoring = 1 ORDER BY hostname"
         ).all();
-        
+
         return result.results.map((row: any) => row.hostname);
     } catch (error) {
         console.error('D1 getDomains error:', error);
@@ -425,7 +425,7 @@ async function handleUpdateDomains(
 
         // Save to D1 (primary storage)
         const stmt = env.DB.prepare("INSERT OR REPLACE INTO domains (id, hostname, url, updated_at) VALUES (?, ?, ?, ?)");
-        const batch = uniqueHostnames.map(hostname => 
+        const batch = uniqueHostnames.map(hostname =>
             stmt.bind(hostname, hostname, hostname, Date.now())
         );
         await env.DB.batch(batch);
@@ -726,7 +726,7 @@ async function handleGetFrontendDomains(
             const result = await env.DB.prepare(
                 "SELECT id, hostname, url, is_monitoring, telegram_chat_id FROM domains WHERE is_monitoring = 1 ORDER BY hostname"
             ).all();
-            
+
             if (result.results && result.results.length > 0) {
                 const domains = result.results.map((row: any) => ({
                     id: row.id,
@@ -735,7 +735,7 @@ async function handleGetFrontendDomains(
                     isMonitoring: row.is_monitoring === 1,
                     telegramChatId: row.telegram_chat_id || undefined,
                 }));
-                
+
                 return jsonResponse({
                     success: true,
                     domains,
@@ -744,7 +744,7 @@ async function handleGetFrontendDomains(
         } catch (d1Error) {
             console.error('D1 error, falling back to KV:', d1Error);
         }
-        
+
         // Fallback to KV
         const domainsKey = 'frontend:domains';
         const storedDomains = await env.SENTINEL_DATA.get(domainsKey);
@@ -772,7 +772,7 @@ async function handleGetFrontendDomains(
     }
 }
 
-// Frontend Domains API - Save domains to KV
+// Frontend Domains API - Save domains to D1 (primary) and KV (backup)
 async function handleSaveFrontendDomains(
     request: Request,
     env: Env,
@@ -793,66 +793,36 @@ async function handleSaveFrontendDomains(
         // Extract hostnames from Domain objects if needed
         const hostnames = domains.map(domain => {
             if (typeof domain === 'string') {
-                // Already a string, extract hostname if it's a URL
                 if (domain.startsWith('http://') || domain.startsWith('https://')) {
                     try {
                         const url = new URL(domain);
-                        return url.hostname.replace(/^www\./, '');
+                        return url.hostname.replace(/^www\./, '').toLowerCase();
                     } catch {
-                        return domain.replace(/^www\./, '');
+                        return domain.replace(/^www\./, '').toLowerCase();
                     }
                 }
-                return domain.replace(/^www\./, '');
+                return domain.replace(/^www\./, '').toLowerCase();
             } else if (domain.hostname) {
-                // Domain object with hostname
-                return domain.hostname.replace(/^www\./, '');
+                return domain.hostname.replace(/^www\./, '').toLowerCase();
             } else if (domain.url) {
-                // Domain object with url
                 try {
                     const url = new URL(domain.url.startsWith('http') ? domain.url : `https://${domain.url}`);
-                    return url.hostname.replace(/^www\./, '');
+                    return url.hostname.replace(/^www\./, '').toLowerCase();
                 } catch {
-                    return domain.url.replace(/^www\./, '');
+                    return domain.url.replace(/^www\./, '').toLowerCase();
                 }
             }
-            return String(domain).replace(/^www\./, '');
+            return String(domain).replace(/^www\./, '').toLowerCase();
         });
 
         // Normalize: remove duplicates and sort
         const uniqueHostnames = [...new Set(hostnames)].sort();
 
-        // Check if data changed to avoid unnecessary KV writes
-        const frontendDomainsKey = 'frontend:domains';
-        const legacyDomainsKey = 'domains:list'; // Also update legacy key for mobile app
-
-        const existingDomains = await env.SENTINEL_DATA.get(frontendDomainsKey);
-        let existingData: any[] = [];
-
-        if (existingDomains) {
-            try {
-                const parsed = JSON.parse(existingDomains);
-                if (Array.isArray(parsed)) {
-                    if (parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0].hostname) {
-                        existingData = parsed.map((d: any) => d.hostname || d.url || d);
-                    } else {
-                        existingData = parsed;
-                    }
-                }
-            } catch (e) {
-                console.error('Error parsing existing domains:', e);
-            }
-        }
-
-        // Normalize existing data
-        const existingHostnames = existingData.map(d => {
-            const str = typeof d === 'string' ? d : (d.hostname || d.url || String(d));
-            return str.replace(/^www\./, '').toLowerCase();
-        }).sort();
-
-        const newHostnames = uniqueHostnames.map(h => h.toLowerCase()).sort();
-
-        // Compare domains (simple check)
-        const domainsChanged = JSON.stringify(existingHostnames) !== JSON.stringify(newHostnames);
+        // Check if changed (compare with D1)
+        const existingDomains = await getDomainsFromD1(env);
+        const existingSorted = existingDomains.map(h => h.toLowerCase()).sort();
+        const newSorted = uniqueHostnames.map(h => h.toLowerCase()).sort();
+        const domainsChanged = JSON.stringify(existingSorted) !== JSON.stringify(newSorted);
 
         if (!domainsChanged) {
             return jsonResponse({
@@ -862,22 +832,29 @@ async function handleSaveFrontendDomains(
             }, 200, corsHeaders);
         }
 
-        // Save to both keys: frontend:domains (for frontend) and domains:list (for mobile app)
-        const writePromises: Promise<void>[] = [];
+        // Save to D1 (primary storage)
+        const stmt = env.DB.prepare("INSERT OR REPLACE INTO domains (id, hostname, url, is_monitoring, telegram_chat_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)");
+        const batch = uniqueHostnames.map(hostname => {
+            const domainObj = domains.find((d: any) => {
+                const h = typeof d === 'string' ? d : (d.hostname || d.url || String(d));
+                return h.replace(/^www\./i, '').toLowerCase() === hostname;
+            });
+            const url = typeof domainObj === 'string' ? domainObj : (domainObj?.url || hostname);
+            const telegramChatId = typeof domainObj === 'object' ? (domainObj.telegramChatId || null) : null;
+            return stmt.bind(hostname, hostname, url, 1, telegramChatId, Date.now());
+        });
+        await env.DB.batch(batch);
 
-        // Save full Domain objects to frontend:domains (for frontend to load)
-        writePromises.push(
-            env.SENTINEL_DATA.put(frontendDomainsKey, JSON.stringify(domains))
-        );
+        // Also save to KV for backward compatibility
+        try {
+            await env.SENTINEL_DATA.put('frontend:domains', JSON.stringify(domains));
+            await env.SENTINEL_DATA.put('domains:list', JSON.stringify(uniqueHostnames));
+        } catch (kvError: any) {
+            // KV error is not critical - D1 is primary
+            console.warn('Failed to update KV (non-critical):', kvError);
+        }
 
-        // Save hostnames array to domains:list (for mobile app) - THIS IS THE KEY MOBILE APP USES
-        writePromises.push(
-            env.SENTINEL_DATA.put(legacyDomainsKey, JSON.stringify(uniqueHostnames))
-        );
-
-        await Promise.all(writePromises);
-
-        console.log(`Frontend sync: Saved ${uniqueHostnames.length} domains to domains:list (${domains.length} objects to frontend:domains)`);
+        console.log(`Frontend sync: Saved ${uniqueHostnames.length} domains to D1`);
 
         return jsonResponse({
             success: true,
@@ -905,13 +882,48 @@ async function handleSaveFrontendDomains(
     }
 }
 
-// Frontend Settings API - Get settings from KV
+// Frontend Settings API - Get settings from D1 (primary) or KV (fallback)
 async function handleGetFrontendSettings(
     request: Request,
     env: Env,
     corsHeaders: Record<string, string>
 ): Promise<Response> {
     try {
+        // Try D1 first
+        try {
+            const result = await env.DB.prepare(
+                "SELECT key, value FROM settings"
+            ).all();
+
+            if (result.results && result.results.length > 0) {
+                const settings: any = {};
+                result.results.forEach((row: any) => {
+                    try {
+                        settings[row.key] = JSON.parse(row.value);
+                    } catch {
+                        settings[row.key] = row.value;
+                    }
+                });
+
+                // Ensure all required fields exist
+                const defaultSettings = {
+                    telegramBotToken: '',
+                    telegramChatId: '',
+                    checkInterval: 360,
+                    backendUrl: '',
+                    workersUrl: '',
+                };
+
+                return jsonResponse({
+                    success: true,
+                    settings: { ...defaultSettings, ...settings },
+                }, 200, corsHeaders);
+            }
+        } catch (d1Error) {
+            console.warn('D1 read error, falling back to KV:', d1Error);
+        }
+
+        // Fallback to KV
         const settingsKey = 'frontend:settings';
         const storedSettings = await env.SENTINEL_DATA.get(settingsKey);
 
@@ -944,7 +956,7 @@ async function handleGetFrontendSettings(
     }
 }
 
-// Frontend Settings API - Save settings to KV
+// Frontend Settings API - Save settings to D1 (primary) and KV (backup)
 async function handleSaveFrontendSettings(
     request: Request,
     env: Env,
@@ -962,13 +974,28 @@ async function handleSaveFrontendSettings(
             );
         }
 
-        // Check if data changed to avoid unnecessary KV writes
-        const settingsKey = 'frontend:settings';
-        const existingSettings = await env.SENTINEL_DATA.get(settingsKey);
-        const existingData = existingSettings ? JSON.parse(existingSettings) : {};
+        // Check if changed (compare with D1)
+        let settingsChanged = true;
+        try {
+            const existingResult = await env.DB.prepare(
+                "SELECT key, value FROM settings"
+            ).all();
 
-        // Compare settings (simple check)
-        const settingsChanged = JSON.stringify(existingData) !== JSON.stringify(settings);
+            if (existingResult.results && existingResult.results.length > 0) {
+                const existingData: any = {};
+                existingResult.results.forEach((row: any) => {
+                    try {
+                        existingData[row.key] = JSON.parse(row.value);
+                    } catch {
+                        existingData[row.key] = row.value;
+                    }
+                });
+
+                settingsChanged = JSON.stringify(existingData) !== JSON.stringify(settings);
+            }
+        } catch (d1Error) {
+            console.error('D1 check error:', d1Error);
+        }
 
         if (!settingsChanged) {
             return jsonResponse({
@@ -978,8 +1005,22 @@ async function handleSaveFrontendSettings(
             }, 200, corsHeaders);
         }
 
-        // Save to KV
-        await env.SENTINEL_DATA.put(settingsKey, JSON.stringify(settings));
+        // Save to D1 (primary storage)
+        const stmt = env.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)");
+        const batch = Object.entries(settings).map(([key, value]) =>
+            stmt.bind(key, JSON.stringify(value), Date.now())
+        );
+        await env.DB.batch(batch);
+
+        // Also save to KV for backward compatibility
+        try {
+            await env.SENTINEL_DATA.put('frontend:settings', JSON.stringify(settings));
+        } catch (kvError: any) {
+            // KV error is not critical - D1 is primary
+            console.warn('Failed to update KV (non-critical):', kvError);
+        }
+
+        console.log('Settings saved to D1');
 
         return jsonResponse({
             success: true,
@@ -988,15 +1029,6 @@ async function handleSaveFrontendSettings(
         }, 200, corsHeaders);
 
     } catch (error: any) {
-        // Check for KV limit error
-        if (error.message && error.message.includes('limit exceeded')) {
-            return jsonResponse({
-                success: false,
-                error: 'KV write limit exceeded for today. Please try again tomorrow.',
-                message: 'Daily KV write limit reached',
-            }, 429, corsHeaders);
-        }
-
         console.error('Save frontend settings error:', error);
         return jsonResponse(
             { error: error.message || 'Internal server error' },

@@ -1,8 +1,8 @@
-# D1 = Shared Storage เหมือน KV แต่ดีกว่า!
+# D1 = Shared Storage เหมือน KV แต่ดีกว่า
 
 ## ✅ คำตอบ: ใช่! หน้าเว็บของเพื่อนจะเห็นเหมือนกัน
 
-### D1 เป็น Shared Database เหมือน KV:
+### D1 เป็น Shared Database เหมือน KV
 
 1. **Domains List** → Sync กันทุกคน
    - คุณเพิ่ม domain → เพื่อนเห็นทันที
@@ -80,9 +80,9 @@ Frontend (คุณ)          Frontend (เพื่อน)
 ## ⚠️ Note
 
 ถ้า `wrangler d1 create` error:
+
 - ลอง `wrangler login` อีกครั้ง
 - หรือสร้างผ่าน Cloudflare Dashboard:
   1. ไปที่ Workers & Pages → D1
   2. Create Database
   3. Copy database_id มาใส่ใน `wrangler.toml`
-

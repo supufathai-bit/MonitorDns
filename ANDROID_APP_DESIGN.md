@@ -435,7 +435,7 @@ class ApiClient(private val context: Context) {
     
     private fun getServerUrl(): String {
         val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-        return prefs.getString("server_url", "") ?: ""
+        return prefs.getString("server_url", DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL
     }
 }
 ```

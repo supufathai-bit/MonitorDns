@@ -65,6 +65,7 @@ wrangler kv:namespace create "SENTINEL_DATA" --preview
 #### C. สร้าง Workers Code
 
 **`src/index.ts`:**
+
 ```typescript
 // Cloudflare Workers API
 export interface Env {
@@ -230,6 +231,7 @@ npx create-next-app@latest sentinel-dns-frontend
 #### B. แก้ไข Frontend ให้ดึงข้อมูลจาก Workers
 
 **`services/apiService.ts`:**
+
 ```typescript
 // API Service for Cloudflare Workers
 const WORKERS_URL = process.env.NEXT_PUBLIC_WORKERS_URL || 'https://your-workers.workers.dev';
@@ -264,6 +266,7 @@ wrangler pages deploy .next
 ```
 
 **หรือใช้ Cloudflare Dashboard:**
+
 1. ไปที่ Cloudflare Dashboard → Pages
 2. Connect GitHub repository
 3. Build command: `npm run build`
@@ -275,6 +278,7 @@ wrangler pages deploy .next
 ### 3. Android App Configuration
 
 **Update API URL ใน Android app:**
+
 ```kotlin
 // ApiClient.kt
 private fun getServerUrl(): String {
@@ -290,6 +294,7 @@ private fun getServerUrl(): String {
 ### 1. Workers Configuration
 
 **`wrangler.toml`:**
+
 ```toml
 name = "sentinel-dns-api"
 main = "src/index.ts"
@@ -304,6 +309,7 @@ preview_id = "your-preview-kv-namespace-id"
 ### 2. Environment Variables
 
 **Frontend (.env.local):**
+
 ```
 NEXT_PUBLIC_WORKERS_URL=https://your-workers.workers.dev
 ```
@@ -421,18 +427,21 @@ curl https://your-workers.workers.dev/api/results
 ## 📝 Summary
 
 **Architecture:**
+
 - Frontend: Cloudflare Pages (Next.js)
 - API: Cloudflare Workers
 - Storage: Cloudflare KV
 - Mobile: Android App → Workers API
 
 **Benefits:**
+
 - ✅ ฟรีทั้งหมด
 - ✅ Performance ดี
 - ✅ Scalable
 - ✅ Global CDN
 
 **Next Steps:**
+
 1. สร้าง Cloudflare Workers
 2. Deploy frontend บน Cloudflare Pages
 3. Update Android app API URL
@@ -440,13 +449,13 @@ curl https://your-workers.workers.dev/api/results
 
 ---
 
-## 🎉 Ready to Deploy!
+## 🎉 Ready to Deploy
 
 ตอนนี้มี:
+
 - ✅ Cloudflare Workers code
 - ✅ Frontend integration
 - ✅ Android app configuration
 - ✅ Deployment guide
 
 **Next:** Deploy บน Cloudflare!
-
