@@ -34,7 +34,7 @@ Workers API ใช้ logic:
 1. **Clear KV Storage:**
    ```bash
    cd workers
-   wrangler kv:key delete "domains:list" --namespace-id=a62456a79f7b4522bb4d9ccabb16b86e
+   wrangler kv key delete "domains:list" --namespace-id=a62456a79f7b4522bb4d9ccabb16b86e
    ```
 
 2. **เปิดหน้าเว็บ:** https://monitordns.pages.dev/
@@ -225,7 +225,7 @@ fetch(`${workersUrl}/api/mobile-sync/domains`, {
 **ใช้ Wrangler CLI:**
 ```bash
 cd workers
-wrangler kv:key get "domains:list" --namespace-id=a62456a79f7b4522bb4d9ccabb16b86e
+wrangler kv key get "domains:list" --namespace-id=a62456a79f7b4522bb4d9ccabb16b86e
 ```
 
 **ควรเห็น:** `["ufathai.win","ufathai.com","www.zec777.com"]`
