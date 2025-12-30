@@ -433,12 +433,29 @@ export default function Home() {
                                     resultsByHostname.get(result.hostname)!.push(result);
                                 });
 
+                                console.log('📊 Results by hostname:', Array.from(resultsByHostname.entries()).map(([h, r]) => [h, r.length]));
+                                console.log('📊 Current domains:', prev.map(d => d.hostname));
+
                                 // Update domains with results
                                 setDomains(prev => prev.map(domain => {
                                     const hostnameResults = resultsByHostname.get(domain.hostname);
                                     if (!hostnameResults || hostnameResults.length === 0) {
-                                        return domain;
+                                        console.log(`⚠️ No results for ${domain.hostname}`);
+                                        // If no results, change PENDING to ERROR to stop loading spinner
+                                        const updatedResults = { ...domain.results };
+                                        Object.keys(updatedResults).forEach(ispKey => {
+                                            if (updatedResults[ispKey as ISP].status === Status.PENDING) {
+                                                updatedResults[ispKey as ISP] = {
+                                                    ...updatedResults[ispKey as ISP],
+                                                    status: Status.ERROR,
+                                                    details: 'No results from mobile app'
+                                                };
+                                            }
+                                        });
+                                        return { ...domain, results: updatedResults };
                                     }
+
+                                    console.log(`✅ Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
 
                                     // Convert Workers results to ISPResult format
                                     const updatedResults = { ...domain.results };
@@ -455,6 +472,21 @@ export default function Home() {
                                                 deviceId: workerResult.device_id,
                                                 timestamp: workerResult.timestamp,
                                             };
+                                        }
+                                    });
+
+                                    // Change remaining PENDING to ERROR if no results for that ISP
+                                    Object.keys(updatedResults).forEach(ispKey => {
+                                        const isp = ispKey as ISP;
+                                        if (updatedResults[isp].status === Status.PENDING) {
+                                            const hasResult = hostnameResults.some(r => r.isp_name === isp);
+                                            if (!hasResult) {
+                                                updatedResults[isp] = {
+                                                    ...updatedResults[isp],
+                                                    status: Status.ERROR,
+                                                    details: 'No result from mobile app for this ISP'
+                                                };
+                                            }
                                         }
                                     });
 
@@ -653,8 +685,8 @@ export default function Home() {
                                         onClick={() => runAllChecks()}
                                         disabled={loading || domains.length === 0}
                                         className={`w-full py-4 rounded font-bold text-center mb-4 transition-all flex items-center justify-center ${loading
-                                                ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                                : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
+                                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                            : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
                                             }`}
                                     >
                                         {loading ? <span className="animate-pulse">SCANNING...</span> : <><Play className="w-4 h-4 mr-2 fill-current" /> RUN FULL SCAN</>}
@@ -689,8 +721,8 @@ export default function Home() {
                                                     {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                                 </span>
                                                 <span className={`ml-2 ${log.type === 'error' ? 'text-red-500' :
-                                                        log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
-                                                            log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
+                                                    log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
+                                                        log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
                                                     }`}>{log.message}</span>
                                             </div>
                                         ))}
