@@ -586,43 +586,197 @@ export default function Home() {
         const currentDomain = domainsRef.current.find(d => d.id === domainId);
         if (!currentDomain) return;
 
-        addLog(`Checking ${currentDomain.hostname}...`, 'info');
+        addLog(`Requesting mobile app to check ${currentDomain.hostname}...`, 'info');
 
         const currentSettings = settingsRef.current;
-        const results = await checkDomainHealth(currentDomain.hostname, currentSettings.backendUrl);
+        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.workersUrl || currentSettings.backendUrl;
 
-        const blockedISPs = Object.values(results)
-            .filter(r => r.status === Status.BLOCKED)
-            .map(r => r.isp);
+        if (workersUrl) {
+            // Trigger mobile app to check DNS
+            try {
+                const triggerResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/trigger-check`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
 
-        if (blockedISPs.length > 0) {
-            addLog(`${currentDomain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
+                if (!triggerResponse.ok) {
+                    const errorText = await triggerResponse.text();
+                    let errorData: any = null;
+                    try {
+                        errorData = JSON.parse(errorText);
+                    } catch {
+                        // If parsing fails, use errorText as is
+                    }
+                    addLog(`Failed to trigger mobile app: ${triggerResponse.status}`, 'error');
+                    if (errorData?.error) {
+                        addLog(`Error: ${errorData.error}`, 'error');
+                    }
+                    return;
+                }
 
-            // Use Domain-Specific Chat ID if available, otherwise Global Default
-            const targetChatId = currentDomain.telegramChatId || currentSettings.telegramChatId;
+                const triggerData = await triggerResponse.json();
+                if (triggerData.success) {
+                    addLog(`Mobile app check triggered. Waiting for results...`, 'info');
+                    
+                    // Poll for results (similar to runAllChecks)
+                    let attempts = 0;
+                    const maxAttempts = 15; // 30 seconds total (2 seconds * 15)
+                    
+                    const pollForResults = async () => {
+                        attempts++;
+                        try {
+                            const response = await fetchResultsFromWorkers(workersUrl);
+                            
+                            if (response.success && response.results.length > 0) {
+                                // Find results for this specific domain
+                                const domainResults = response.results.filter(r => {
+                                    const normalizedHostname = r.hostname.toLowerCase().replace(/^www\./, '');
+                                    const normalizedDomainHostname = currentDomain.hostname.toLowerCase().replace(/^www\./, '');
+                                    return normalizedHostname === normalizedDomainHostname;
+                                });
 
-            if (currentSettings.telegramBotToken && targetChatId) {
-                sendTelegramAlert(currentSettings.telegramBotToken, targetChatId, currentDomain, blockedISPs)
-                    .then(sent => {
-                        if (sent) addLog(`Telegram alert sent to ${currentDomain.telegramChatId ? 'custom' : 'default'} chat`, 'success');
-                        else addLog('Failed to send Telegram alert', 'error');
-                    });
+                                if (domainResults.length > 0) {
+                                    // Update domain with new results (reuse logic from loadResultsFromWorkers)
+                                    const hostnameResults = domainResults;
+                                    const ispMap: Record<string, ISP> = {
+                                        'Unknown': ISP.AIS,
+                                        'unknown': ISP.AIS,
+                                        'AIS': ISP.AIS,
+                                        'True': ISP.TRUE,
+                                        'TRUE': ISP.TRUE,
+                                        'true': ISP.TRUE,
+                                        'DTAC': ISP.TRUE,
+                                        'dtac': ISP.TRUE,
+                                        'NT': ISP.NT,
+                                        'nt': ISP.NT,
+                                        'Global (Google)': ISP.GLOBAL,
+                                        'Global': ISP.GLOBAL,
+                                    };
+
+                                    const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
+                                    hostnameResults.forEach(workerResult => {
+                                        const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
+                                        const existing = resultsByMappedISP.get(mappedISP);
+                                        
+                                        if (!existing) {
+                                            resultsByMappedISP.set(mappedISP, workerResult);
+                                        } else {
+                                            if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
+                                                resultsByMappedISP.set(mappedISP, workerResult);
+                                            } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
+                                                // Keep existing BLOCKED
+                                            } else {
+                                                const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
+                                                const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
+                                                
+                                                if (!newIsUnknown && existingIsUnknown) {
+                                                    resultsByMappedISP.set(mappedISP, workerResult);
+                                                } else {
+                                                    const existingTimestamp = existing.timestamp || 0;
+                                                    const newTimestamp = workerResult.timestamp || 0;
+                                                    if (newTimestamp > existingTimestamp) {
+                                                        resultsByMappedISP.set(mappedISP, workerResult);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
+
+                                    const updatedResults = { ...currentDomain.results };
+                                    resultsByMappedISP.forEach((workerResult, isp) => {
+                                        const ispName = workerResult.isp_name;
+                                        const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' || 
+                                                           ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
+                                        
+                                        if (isTrueOrDTAC) {
+                                            const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
+                                            slots.forEach(slotKey => {
+                                                if (updatedResults[slotKey]) {
+                                                    const targetISP = slotKey === 'True' ? ISP.TRUE : slotKey === 'DTAC' ? ISP.DTAC : slotKey;
+                                                    updatedResults[slotKey] = {
+                                                        isp: targetISP,
+                                                        status: workerResult.status as Status,
+                                                        ip: workerResult.ip || '',
+                                                        latency: workerResult.latency || 0,
+                                                        details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                        source: 'mobile-app',
+                                                        deviceId: workerResult.device_id,
+                                                        timestamp: workerResult.timestamp,
+                                                    };
+                                                }
+                                            });
+                                        } else {
+                                            if (updatedResults[isp]) {
+                                                updatedResults[isp] = {
+                                                    isp: isp,
+                                                    status: workerResult.status as Status,
+                                                    ip: workerResult.ip || '',
+                                                    latency: workerResult.latency || 0,
+                                                    details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                    source: 'mobile-app',
+                                                    deviceId: workerResult.device_id,
+                                                    timestamp: workerResult.timestamp,
+                                                };
+                                            }
+                                        }
+                                    });
+
+                                    const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp || 0));
+                                    
+                                    setDomains(prev => prev.map(d => {
+                                        if (d.id === domainId) {
+                                            return { ...d, lastCheck: latestTimestamp, results: updatedResults };
+                                        }
+                                        return d;
+                                    }));
+
+                                    const blockedISPs = Object.values(updatedResults)
+                                        .filter(r => r.status === Status.BLOCKED)
+                                        .map(r => r.isp);
+
+                                    if (blockedISPs.length > 0) {
+                                        addLog(`${currentDomain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
+                                        const targetChatId = currentDomain.telegramChatId || currentSettings.telegramChatId;
+                                        if (currentSettings.telegramBotToken && targetChatId) {
+                                            sendTelegramAlert(currentSettings.telegramBotToken, targetChatId, currentDomain, blockedISPs)
+                                                .then(sent => {
+                                                    if (sent) addLog(`Telegram alert sent`, 'success');
+                                                });
+                                        }
+                                    } else {
+                                        addLog(`${currentDomain.hostname}: Check complete`, 'success');
+                                    }
+                                    return; // Success, stop polling
+                                }
+                            }
+
+                            if (attempts < maxAttempts) {
+                                setTimeout(pollForResults, 2000);
+                            } else {
+                                addLog(`Timeout waiting for results for ${currentDomain.hostname}`, 'error');
+                            }
+                        } catch (error) {
+                            console.error('Error polling for results:', error);
+                            if (attempts < maxAttempts) {
+                                setTimeout(pollForResults, 2000);
+                            } else {
+                                addLog(`Failed to get results for ${currentDomain.hostname}`, 'error');
+                            }
+                        }
+                    };
+
+                    // Start polling after a short delay
+                    setTimeout(pollForResults, 2000);
+                } else {
+                    addLog('Failed to trigger mobile app check', 'error');
+                }
+            } catch (error) {
+                console.error('Error triggering mobile app:', error);
+                addLog('Failed to trigger mobile app check', 'error');
             }
         } else {
-            const errors = Object.values(results).filter(r => r.status === Status.ERROR);
-            if (errors.length > 0) {
-                addLog(`${currentDomain.hostname}: Check Failed`, 'error');
-            } else {
-                addLog(`${currentDomain.hostname} is clean`, 'success');
-            }
+            addLog('Workers URL not configured', 'error');
         }
-
-        setDomains(prev => prev.map(d => {
-            if (d.id === domainId) {
-                return { ...d, lastCheck: Date.now(), results: results };
-            }
-            return d;
-        }));
     }, [addLog]);
 
     const runAllChecks = useCallback(async () => {
