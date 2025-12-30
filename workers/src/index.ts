@@ -61,27 +61,27 @@ export default {
             return handleGetResults(request, env, corsHeaders);
         }
 
-    // Update domains list (for frontend to sync)
-    if (url.pathname === '/api/mobile-sync/domains' && request.method === 'POST') {
-      return handleUpdateDomains(request, env, corsHeaders);
-    }
+        // Update domains list (for frontend to sync)
+        if (url.pathname === '/api/mobile-sync/domains' && request.method === 'POST') {
+            return handleUpdateDomains(request, env, corsHeaders);
+        }
 
-    // Trigger mobile app to check DNS (for frontend to request)
-    if (url.pathname === '/api/trigger-check' && request.method === 'POST') {
-      return handleTriggerCheck(request, env, corsHeaders);
-    }
+        // Trigger mobile app to check DNS (for frontend to request)
+        if (url.pathname === '/api/trigger-check' && request.method === 'POST') {
+            return handleTriggerCheck(request, env, corsHeaders);
+        }
 
-    // Check if check is triggered (for mobile app to poll)
-    if (url.pathname === '/api/trigger-check' && request.method === 'GET') {
-      return handleGetTriggerCheck(request, env, corsHeaders);
-    }
+        // Check if check is triggered (for mobile app to poll)
+        if (url.pathname === '/api/trigger-check' && request.method === 'GET') {
+            return handleGetTriggerCheck(request, env, corsHeaders);
+        }
 
-    // DNS Check API - Uses DoH for Global, cached results for ISP-specific
-    if (url.pathname === '/api/check' && request.method === 'POST') {
-      return handleDNSCheck(request, env, corsHeaders);
-    }
+        // DNS Check API - Uses DoH for Global, cached results for ISP-specific
+        if (url.pathname === '/api/check' && request.method === 'POST') {
+            return handleDNSCheck(request, env, corsHeaders);
+        }
 
-    return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
+        return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
 
@@ -139,6 +139,10 @@ async function handleMobileSync(
                 expirationTtl: 86400 * 7, // 7 days
             });
         }
+
+        // Clear trigger flag after sync (mobile app has checked)
+        const triggerKey = 'trigger:check';
+        await env.SENTINEL_DATA.delete(triggerKey);
 
         // Store device info
         const deviceKey = `device:${device_id}`;
@@ -269,7 +273,7 @@ async function handleTriggerCheck(
         // Set trigger flag in KV (expires in 5 minutes)
         const triggerKey = 'trigger:check';
         const timestamp = Date.now();
-        
+
         await env.SENTINEL_DATA.put(triggerKey, JSON.stringify({
             triggered: true,
             timestamp,
