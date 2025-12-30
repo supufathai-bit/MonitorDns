@@ -204,9 +204,13 @@ export default function Home() {
 
                         console.log(`✅ [loadResultsFromWorkers] Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
 
+                        // Sort results by timestamp (newest first) to ensure we use the latest result
+                        const sortedResults = [...hostnameResults].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                        console.log(`📅 [loadResultsFromWorkers] Sorted results by timestamp:`, sortedResults.map(r => `${r.isp_name}:${r.status} (${r.timestamp})`));
+
                         // Convert Workers results to ISPResult format
                         const updatedResults = { ...domain.results };
-                        hostnameResults.forEach(workerResult => {
+                        sortedResults.forEach(workerResult => {
                             // Map ISP name to match frontend ISP enum
                             // Mobile app might send "Unknown", "AIS", "True", "DTAC", "NT", etc.
                             let ispName = workerResult.isp_name;
@@ -229,7 +233,12 @@ export default function Home() {
                             
                             const isp = ispMap[ispName] || ISP.AIS; // Default to AIS if not mapped
                             
+                            console.log(`🔄 [loadResultsFromWorkers] Mapping result: ${ispName} -> ${isp}, status: ${workerResult.status}`);
+                            
                             if (updatedResults[isp]) {
+                                // Always update with the latest result (results are already sorted by timestamp)
+                                const existingResult = updatedResults[isp];
+                                console.log(`🔄 [loadResultsFromWorkers] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
                                 updatedResults[isp] = {
                                     isp: isp,
                                     status: workerResult.status as Status,
@@ -240,6 +249,8 @@ export default function Home() {
                                     deviceId: workerResult.device_id,
                                     timestamp: workerResult.timestamp,
                                 };
+                            } else {
+                                console.warn(`⚠️ [loadResultsFromWorkers] No result slot for ISP: ${isp} (mapped from ${ispName})`);
                             }
                         });
 
@@ -668,9 +679,13 @@ export default function Home() {
 
                                     console.log(`✅ Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
 
+                                    // Sort results by timestamp (newest first) to ensure we use the latest result
+                                    const sortedResults = [...hostnameResults].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                                    console.log(`📅 [pollForResults] Sorted results by timestamp:`, sortedResults.map(r => `${r.isp_name}:${r.status} (${r.timestamp})`));
+
                                     // Convert Workers results to ISPResult format
                                     const updatedResults = { ...domain.results };
-                                    hostnameResults.forEach(workerResult => {
+                                    sortedResults.forEach(workerResult => {
                                         // Map ISP name to match frontend ISP enum
                                         let ispName = workerResult.isp_name;
                                         
@@ -691,7 +706,12 @@ export default function Home() {
                                         
                                         const isp = ispMap[ispName] || ISP.AIS;
                                         
+                                        console.log(`🔄 [pollForResults] Mapping result: ${ispName} -> ${isp}, status: ${workerResult.status}`);
+                                        
                                         if (updatedResults[isp]) {
+                                            // Always update with the latest result (results are already sorted by timestamp)
+                                            const existingResult = updatedResults[isp];
+                                            console.log(`🔄 [pollForResults] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
                                             updatedResults[isp] = {
                                                 isp: isp,
                                                 status: workerResult.status as Status,
@@ -702,6 +722,8 @@ export default function Home() {
                                                 deviceId: workerResult.device_id,
                                                 timestamp: workerResult.timestamp,
                                             };
+                                        } else {
+                                            console.warn(`⚠️ [pollForResults] No result slot for ISP: ${isp} (mapped from ${ispName})`);
                                         }
                                     });
 
