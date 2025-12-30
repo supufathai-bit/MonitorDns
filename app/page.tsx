@@ -402,131 +402,145 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
         });
 
-        if (triggerResponse.ok) {
-          const triggerData = await triggerResponse.json();
-          addLog('Mobile app check triggered. Waiting for results...', 'info');
+        if (!triggerResponse.ok) {
+          const errorText = await triggerResponse.text();
+          addLog(`Failed to trigger mobile app: ${triggerResponse.status}`, 'error');
+          console.error('Trigger error:', errorText);
+          setLoading(false);
+          addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
+          return;
+        }
+
+        const triggerData = await triggerResponse.json();
+        addLog('Mobile app check triggered. Waiting for results...', 'info');
+        console.log('Trigger data:', triggerData);
+        
+        // Poll for results (check every 2 seconds, max 30 seconds)
+        let attempts = 0;
+        const maxAttempts = 15; // 30 seconds total
+        const triggerTimestamp = triggerData.timestamp || Date.now();
+        
+        const pollForResults = async (): Promise<void> => {
+          attempts++;
+          addLog(`Polling for results... (${attempts}/${maxAttempts})`, 'info');
           
-          // Poll for results (check every 2 seconds, max 30 seconds)
-          let attempts = 0;
-          const maxAttempts = 15; // 30 seconds total
-          
-          const pollForResults = async (): Promise<void> => {
-            attempts++;
+          try {
+            const response = await fetchResultsFromWorkers(workersUrl);
             
-            try {
-              const response = await fetchResultsFromWorkers(workersUrl);
+            if (response.success && response.results.length > 0) {
+              // Check if results are newer than trigger time
+              const latestResult = Math.max(...response.results.map(r => r.timestamp));
+              console.log('Latest result timestamp:', latestResult, 'Trigger timestamp:', triggerTimestamp);
               
-              if (response.success && response.results.length > 0) {
-                // Check if results are newer than trigger time
-                const latestResult = Math.max(...response.results.map(r => r.timestamp));
-                if (latestResult >= triggerData.timestamp) {
-                  addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
-                  
-                  // Group results by hostname
-                  const resultsByHostname = new Map<string, typeof response.results>();
-                  response.results.forEach(result => {
-                    if (!resultsByHostname.has(result.hostname)) {
-                      resultsByHostname.set(result.hostname, []);
-                    }
-                    resultsByHostname.get(result.hostname)!.push(result);
-                  });
-
-                  // Update domains with results
-                  setDomains(prev => prev.map(domain => {
-                    const hostnameResults = resultsByHostname.get(domain.hostname);
-                    if (!hostnameResults || hostnameResults.length === 0) {
-                      return domain;
-                    }
-
-                    // Convert Workers results to ISPResult format
-                    const updatedResults = { ...domain.results };
-                    hostnameResults.forEach(workerResult => {
-                      const isp = workerResult.isp_name as ISP;
-                      if (updatedResults[isp]) {
-                        updatedResults[isp] = {
-                          isp: isp,
-                          status: workerResult.status as Status,
-                          ip: workerResult.ip || '',
-                          latency: workerResult.latency || 0,
-                          details: `From mobile app (${new Date(workerResult.timestamp).toLocaleString()})`,
-                          source: 'mobile-app',
-                          deviceId: workerResult.device_id,
-                          timestamp: workerResult.timestamp,
-                        };
-                      }
-                    });
-
-                    // Find latest timestamp
-                    const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
-
-                    return {
-                      ...domain,
-                      results: updatedResults,
-                      lastCheck: latestTimestamp,
-                    };
-                  }));
-
-                  // Check for blocked domains
-                  const blockedDomains: Array<{ domain: string; isps: string[] }> = [];
-                  domainsRef.current.forEach(domain => {
-                    const blockedISPs = Object.values(domain.results)
-                      .filter(r => r.status === Status.BLOCKED)
-                      .map(r => r.isp);
-                    if (blockedISPs.length > 0) {
-                      blockedDomains.push({ domain: domain.hostname, isps: blockedISPs });
-                    }
-                  });
-
-                  if (blockedDomains.length > 0) {
-                    blockedDomains.forEach(({ domain, isps }) => {
-                      addLog(`${domain} BLOCKED on ${isps.join(', ')}`, 'alert');
-                    });
-                  } else {
-                    addLog('All domains are active', 'success');
+              if (latestResult >= triggerTimestamp) {
+                addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
+                
+                // Group results by hostname
+                const resultsByHostname = new Map<string, typeof response.results>();
+                response.results.forEach(result => {
+                  if (!resultsByHostname.has(result.hostname)) {
+                    resultsByHostname.set(result.hostname, []);
                   }
-                  
-                  setLoading(false);
-                  addLog('Scan complete.', 'success');
-                  return;
-                }
-              }
-              
-              // If no new results yet, continue polling
-              if (attempts < maxAttempts) {
-                setTimeout(pollForResults, 2000);
-              } else {
-                addLog('Timeout waiting for mobile app results. Please check from mobile app.', 'error');
-                setLoading(false);
-              }
-            } catch (error) {
-              console.error('Error polling for results:', error);
-              if (attempts < maxAttempts) {
-                setTimeout(pollForResults, 2000);
-              } else {
-                addLog('Failed to get results from mobile app', 'error');
-                setLoading(false);
-              }
-            }
-          };
-          
-          // Start polling after 2 seconds
-          setTimeout(pollForResults, 2000);
-    } else {
-      // Fallback: Use local DNS check (less accurate)
-      addLog('Workers URL not configured, using local DNS check (less accurate)', 'info');
-      if (currentSettings.checkInterval > 0) {
-        setNextScanTime(Date.now() + (currentSettings.checkInterval * 60 * 1000));
-      }
+                  resultsByHostname.get(result.hostname)!.push(result);
+                });
 
-      const domainIds = domainsRef.current.map(d => d.id);
-      for (const id of domainIds) {
-        await checkSingleDomain(id);
-        await new Promise(r => setTimeout(r, 500)); 
+                // Update domains with results
+                setDomains(prev => prev.map(domain => {
+                  const hostnameResults = resultsByHostname.get(domain.hostname);
+                  if (!hostnameResults || hostnameResults.length === 0) {
+                    return domain;
+                  }
+
+                  // Convert Workers results to ISPResult format
+                  const updatedResults = { ...domain.results };
+                  hostnameResults.forEach(workerResult => {
+                    const isp = workerResult.isp_name as ISP;
+                    if (updatedResults[isp]) {
+                      updatedResults[isp] = {
+                        isp: isp,
+                        status: workerResult.status as Status,
+                        ip: workerResult.ip || '',
+                        latency: workerResult.latency || 0,
+                        details: `From mobile app (${new Date(workerResult.timestamp).toLocaleString()})`,
+                        source: 'mobile-app',
+                        deviceId: workerResult.device_id,
+                        timestamp: workerResult.timestamp,
+                      };
+                    }
+                  });
+
+                  // Find latest timestamp
+                  const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
+
+                  return {
+                    ...domain,
+                    results: updatedResults,
+                    lastCheck: latestTimestamp,
+                  };
+                }));
+
+                // Check for blocked domains
+                const blockedDomains: Array<{ domain: string; isps: string[] }> = [];
+                domainsRef.current.forEach(domain => {
+                  const blockedISPs = Object.values(domain.results)
+                    .filter(r => r.status === Status.BLOCKED)
+                    .map(r => r.isp);
+                  if (blockedISPs.length > 0) {
+                    blockedDomains.push({ domain: domain.hostname, isps: blockedISPs });
+                  }
+                });
+
+                if (blockedDomains.length > 0) {
+                  blockedDomains.forEach(({ domain, isps }) => {
+                    addLog(`${domain} BLOCKED on ${isps.join(', ')}`, 'alert');
+                  });
+                } else {
+                  addLog('All domains are active', 'success');
+                }
+                
+                setLoading(false);
+                addLog('Scan complete.', 'success');
+                return;
+              } else {
+                console.log('Results are older than trigger, waiting for new results...');
+              }
+            } else {
+              console.log('No results yet, waiting...');
+            }
+            
+            // If no new results yet, continue polling
+            if (attempts < maxAttempts) {
+              setTimeout(pollForResults, 2000);
+            } else {
+              addLog('Timeout waiting for mobile app results. Mobile app may not be polling for triggers.', 'error');
+              addLog('Please check from mobile app manually or ensure mobile app is running and polling.', 'error');
+              setLoading(false);
+            }
+          } catch (error) {
+            console.error('Error polling for results:', error);
+            if (attempts < maxAttempts) {
+              setTimeout(pollForResults, 2000);
+            } else {
+              addLog('Failed to get results from mobile app', 'error');
+              setLoading(false);
+            }
+          }
+        };
+        
+        // Start polling after 2 seconds
+        setTimeout(pollForResults, 2000);
+      } catch (error) {
+        console.error('Error triggering mobile app:', error);
+        addLog('Failed to trigger mobile app check', 'error');
+        addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
+        setLoading(false);
       }
+    } else {
+      // No Workers URL configured
+      addLog('Workers URL not configured. Please set Workers URL in Settings.', 'error');
+      addLog('Mobile app integration requires Workers URL to be configured.', 'error');
+      setLoading(false);
     }
-    
-    setLoading(false);
-    addLog('Scan complete.', 'success');
   }, [loading, checkSingleDomain, addLog]);
 
   // Scheduler
