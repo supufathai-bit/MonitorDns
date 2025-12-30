@@ -16,9 +16,15 @@
 
 ### Mobile App ต้องทำ:
 
-1. **Polling Trigger** (ทุก 10-30 วินาที)
+1. **Polling Trigger** (ทุก 30 วินาที) - **สำคัญมาก!**
 2. **เช็ค DNS** เมื่อเห็น trigger
 3. **Sync ผลลัพธ์** กลับไปที่ Workers
+
+### ⚠️ ถ้าไม่ทำ:
+
+- Frontend จะ timeout หลัง 30 วินาที
+- ผู้ใช้ต้องกด "CHECK NOW" ในแอพเอง
+- ไม่ได้ประโยชน์จาก trigger system
 
 ---
 
