@@ -28,7 +28,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
   const setDailyInterval = () => {
     setFormData(prev => ({
         ...prev,
-        checkInterval: 1440 // 24 hours
+        checkInterval: 480 // 8 hours (3 scans per day)
+    }));
+  };
+
+  const set6HourInterval = () => {
+    setFormData(prev => ({
+        ...prev,
+        checkInterval: 360 // 6 hours (4 scans per day)
     }));
   };
 

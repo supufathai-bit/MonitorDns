@@ -21,7 +21,7 @@ const generateId = () => {
 const defaultSettings: AppSettings = {
     telegramBotToken: '',
     telegramChatId: '',
-    checkInterval: 1440, // Default to 24 hours
+    checkInterval: 480, // Default to 8 hours (3 scans per day: 0:00, 8:00, 16:00)
     backendUrl: ''
 };
 
@@ -649,7 +649,7 @@ export default function Home() {
     // Scheduler
     useEffect(() => {
         if (!loadedRef.current || domains.length === 0) return;
-        
+
         // Skip auto-scan if KV limit is exceeded
         if (kvLimitExceededRef.current) {
             console.log('⏸️ Auto-scan paused - KV limit exceeded');
