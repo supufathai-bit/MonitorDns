@@ -1,4 +1,12 @@
-# HTTP Content Check - ตรวจจับการบล็อคจากหน้า Warning
+# HTTP Content Check - ตรวจจับการบล็อคจากหน้า Warning (Optional Feature)
+
+## ⚠️ หมายเหตุ
+
+**Feature นี้เป็น Optional** - ระบบหลักใช้ logic แบบเดิม:
+- DNS resolution ได้ IP = ACTIVE
+- DNS resolution ไม่ได้ IP = BLOCKED
+
+HTTP Content Check ใช้สำหรับกรณีพิเศษเท่านั้น
 
 ## ปัญหา
 
@@ -9,9 +17,10 @@
 - DNS resolution สำเร็จ → ได้ IP address
 - แต่หน้าเว็บแสดงหน้า warning ของกระทรวง → ถูกบล็อคจริงๆ
 
-## วิธีแก้ไข
+## วิธีแก้ไข (Optional)
 
 เพิ่ม HTTP Content Check endpoint เพื่อตรวจสอบว่า domain แสดงหน้า blocking page หรือไม่
+**แต่เนื่องจากการบล็อคจากกระทรวงแยกยาก ระบบหลักจะใช้ DNS resolution logic แทน**
 
 ### Endpoint: `/api/check-content`
 

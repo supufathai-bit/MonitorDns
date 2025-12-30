@@ -159,15 +159,10 @@ async function handleMobileSync(
                         ispName = device_info?.isp || 'Unknown';
                     }
                     
-                    // Check if status should be BLOCKED based on HTTP content
-                    // If mobile app reports ACTIVE but we detect blocking page, mark as BLOCKED
-                    let finalStatus = result.status;
-                    
-                    // If status is ACTIVE and we have IP, check HTTP content for blocking page
-                    if (result.status === 'ACTIVE' && result.ip) {
-                        // Note: HTTP check should be done in mobile app, but we can verify here
-                        // For now, trust mobile app's status, but we'll add HTTP verification endpoint
-                    }
+                    // Use mobile app's status directly
+                    // Logic: DNS resolution got IP = ACTIVE, no IP = BLOCKED
+                    // We trust mobile app's DNS check result
+                    const finalStatus = result.status;
                     
                     const resultId = `${result.hostname}:${ispName}:${device_id}`;
                     return d1Stmt.bind(
