@@ -295,33 +295,22 @@ async function handleGetDomains(
     corsHeaders: Record<string, string>
 ): Promise<Response> {
     try {
-        // Priority: frontend:domains (from frontend sync) > domains:list (legacy) > defaults
-        const frontendDomainsKey = 'frontend:domains';
-        const legacyDomainsKey = 'domains:list';
-        
-        // Try frontend:domains first (newer, synced from frontend)
-        let storedDomains = await env.SENTINEL_DATA.get(frontendDomainsKey);
-        let domainsKey = frontendDomainsKey;
-        
-        // Fallback to legacy key if frontend:domains doesn't exist
-        if (!storedDomains) {
-            storedDomains = await env.SENTINEL_DATA.get(legacyDomainsKey);
-            domainsKey = legacyDomainsKey;
-        }
+        // Use domains:list as primary source (same key that frontend syncs to)
+        const domainsKey = 'domains:list';
+        const storedDomains = await env.SENTINEL_DATA.get(domainsKey);
 
         let domains: string[] = [];
         if (storedDomains) {
             try {
                 const parsed = JSON.parse(storedDomains);
-                // Handle both formats: array of strings or array of Domain objects
                 if (Array.isArray(parsed)) {
-                    if (parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0].hostname) {
-                        // Array of Domain objects - extract hostnames
-                        domains = parsed.map((d: any) => d.hostname || d.url || d);
-                    } else {
-                        // Array of strings
-                        domains = parsed;
-                    }
+                    // Normalize hostnames (remove www, lowercase)
+                    domains = parsed.map((d: any) => {
+                        const str = typeof d === 'string' ? d : (d.hostname || d.url || String(d));
+                        return str.replace(/^www\./i, '').toLowerCase();
+                    });
+                    // Remove duplicates and sort
+                    domains = [...new Set(domains)].sort();
                 }
             } catch (e) {
                 console.error('Error parsing domains:', e);
@@ -778,10 +767,10 @@ async function handleSaveFrontendDomains(
         // Check if data changed to avoid unnecessary KV writes
         const frontendDomainsKey = 'frontend:domains';
         const legacyDomainsKey = 'domains:list'; // Also update legacy key for mobile app
-        
+
         const existingDomains = await env.SENTINEL_DATA.get(frontendDomainsKey);
         let existingData: any[] = [];
-        
+
         if (existingDomains) {
             try {
                 const parsed = JSON.parse(existingDomains);
@@ -796,18 +785,18 @@ async function handleSaveFrontendDomains(
                 console.error('Error parsing existing domains:', e);
             }
         }
-        
+
         // Normalize existing data
         const existingHostnames = existingData.map(d => {
             const str = typeof d === 'string' ? d : (d.hostname || d.url || String(d));
             return str.replace(/^www\./, '').toLowerCase();
         }).sort();
-        
+
         const newHostnames = uniqueHostnames.map(h => h.toLowerCase()).sort();
-        
+
         // Compare domains (simple check)
         const domainsChanged = JSON.stringify(existingHostnames) !== JSON.stringify(newHostnames);
-        
+
         if (!domainsChanged) {
             return jsonResponse({
                 success: true,
@@ -824,14 +813,14 @@ async function handleSaveFrontendDomains(
             env.SENTINEL_DATA.put(frontendDomainsKey, JSON.stringify(domains))
         );
         
-        // Save hostnames array to domains:list (for mobile app)
+        // Save hostnames array to domains:list (for mobile app) - THIS IS THE KEY MOBILE APP USES
         writePromises.push(
             env.SENTINEL_DATA.put(legacyDomainsKey, JSON.stringify(uniqueHostnames))
         );
 
         await Promise.all(writePromises);
 
-        console.log(`Frontend sync: Saved ${uniqueHostnames.length} domains (${domains.length} objects)`);
+        console.log(`Frontend sync: Saved ${uniqueHostnames.length} domains to domains:list (${domains.length} objects to frontend:domains)`);
 
         return jsonResponse({
             success: true,
