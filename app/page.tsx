@@ -858,15 +858,14 @@ export default function Home() {
     useEffect(() => {
         if (!loadedRef.current || domains.length === 0) return;
 
-        // Skip auto-scan if KV limit is exceeded (but we're using D1 now, so this is less critical)
+        // Skip auto-scan if KV limit is exceeded (but we're using D1 now, so this should not happen)
         // Note: D1 doesn't have write limits like KV, so this check is mainly for backward compatibility
+        // Reset KV limit check since we're using D1 now
         if (kvLimitExceededRef.current) {
-            console.log('⏸️ Auto-scan paused - KV limit exceeded (using D1 now, this should not happen)');
-            // Reset after 1 hour to allow retry
-            setTimeout(() => {
-                kvLimitExceededRef.current = false;
-            }, 3600000);
-            return;
+            console.log('⏸️ Auto-scan paused - KV limit exceeded (using D1 now, resetting...)');
+            // Reset immediately since we're using D1 now
+            kvLimitExceededRef.current = false;
+            addLog('✅ KV limit check reset - Using D1 now (no write limits)', 'info');
         }
 
         const intervalMs = settings.checkInterval * 60 * 1000;

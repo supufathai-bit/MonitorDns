@@ -279,11 +279,18 @@ async function handleMobileSync(
             }
 
             // Clear trigger flag after sync (mobile app has checked)
-            // Use delete instead of put to save KV writes (deletes don't count toward write limit the same way)
+            // Delete from D1 first, then KV
             const triggerKey = 'trigger:check';
+            try {
+                await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(triggerKey).run();
+                console.log('Trigger check cleared from D1');
+            } catch (d1Error) {
+                console.warn('D1 delete error (non-critical):', d1Error);
+            }
+            // Also clear from KV (backward compatibility)
             writePromises.push(
                 env.SENTINEL_DATA.delete(triggerKey).catch(err => {
-                    console.error(`Failed to delete ${triggerKey}:`, err);
+                    console.error(`Failed to delete ${triggerKey} from KV:`, err);
                     // Don't throw - deletion failure is not critical
                 })
             );
@@ -506,43 +513,75 @@ async function handleTriggerCheck(
     corsHeaders: Record<string, string>
 ): Promise<Response> {
     try {
-        // Check if trigger already exists (avoid unnecessary writes)
-        const triggerKey = 'trigger:check';
-        const existingTrigger = await env.SENTINEL_DATA.get(triggerKey);
-
-        if (existingTrigger) {
-            try {
-                const existing = JSON.parse(existingTrigger);
-                // If trigger was set less than 1 minute ago, don't update
-                if (Date.now() - existing.timestamp < 60000) {
-                    return jsonResponse({
-                        success: true,
-                        message: 'Check already triggered. Mobile app will check DNS soon.',
-                        timestamp: existing.timestamp,
-                        cached: true,
-                    }, 200, corsHeaders);
-                }
-            } catch {
-                // If parse fails, continue to update
-            }
-        }
-
-        // Set trigger flag in KV (expires in 5 minutes)
         const timestamp = Date.now();
+        const triggerKey = 'trigger:check';
 
-        await env.SENTINEL_DATA.put(triggerKey, JSON.stringify({
-            triggered: true,
-            timestamp,
-            requested_by: 'frontend',
-        }), {
-            expirationTtl: 300, // 5 minutes
-        }).catch((kvError: any) => {
-            // Check if it's a KV limit error
-            if (kvError.message && kvError.message.includes('limit exceeded')) {
-                throw new Error('KV put() limit exceeded for the day.');
+        // Try D1 first (primary storage - no write limits!)
+        try {
+            // Check if trigger already exists in D1
+            const existingResult = await env.DB.prepare(
+                "SELECT value, updated_at FROM settings WHERE key = ?"
+            ).bind(triggerKey).first();
+
+            if (existingResult) {
+                try {
+                    const existing = JSON.parse(existingResult.value as string);
+                    // If trigger was set less than 1 minute ago, don't update
+                    if (timestamp - existing.timestamp < 60000) {
+                        return jsonResponse({
+                            success: true,
+                            message: 'Check already triggered. Mobile app will check DNS soon.',
+                            timestamp: existing.timestamp,
+                            cached: true,
+                        }, 200, corsHeaders);
+                    }
+                } catch {
+                    // If parse fails, continue to update
+                }
             }
-            throw kvError;
-        });
+
+            // Save trigger to D1
+            await env.DB.prepare(
+                "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+            ).bind(
+                triggerKey,
+                JSON.stringify({
+                    triggered: true,
+                    timestamp,
+                    requested_by: 'frontend',
+                }),
+                timestamp
+            ).run();
+
+            console.log('Trigger check saved to D1');
+        } catch (d1Error) {
+            console.error('D1 save error, falling back to KV:', d1Error);
+            // Fallback to KV (for backward compatibility)
+            const existingTrigger = await env.SENTINEL_DATA.get(triggerKey);
+            if (existingTrigger) {
+                try {
+                    const existing = JSON.parse(existingTrigger);
+                    if (timestamp - existing.timestamp < 60000) {
+                        return jsonResponse({
+                            success: true,
+                            message: 'Check already triggered. Mobile app will check DNS soon.',
+                            timestamp: existing.timestamp,
+                            cached: true,
+                        }, 200, corsHeaders);
+                    }
+                } catch {
+                    // If parse fails, continue to update
+                }
+            }
+
+            await env.SENTINEL_DATA.put(triggerKey, JSON.stringify({
+                triggered: true,
+                timestamp,
+                requested_by: 'frontend',
+            }), {
+                expirationTtl: 300, // 5 minutes
+            });
+        }
 
         return jsonResponse({
             success: true,
@@ -552,16 +591,6 @@ async function handleTriggerCheck(
 
     } catch (error: any) {
         console.error('Trigger check error:', error);
-
-        // Return specific error message for KV limit
-        if (error.message && error.message.includes('limit exceeded')) {
-            return jsonResponse({
-                success: false,
-                error: 'KV put() limit exceeded for the day.',
-                message: 'Daily KV write limit reached. Please try again tomorrow or upgrade your Cloudflare plan.',
-            }, 429, corsHeaders); // 429 Too Many Requests
-        }
-
         return jsonResponse(
             { error: error.message || 'Internal server error' },
             500,
@@ -578,8 +607,39 @@ async function handleGetTriggerCheck(
 ): Promise<Response> {
     try {
         const triggerKey = 'trigger:check';
-        const triggerData = await env.SENTINEL_DATA.get(triggerKey);
 
+        // Try D1 first (primary storage)
+        try {
+            const result = await env.DB.prepare(
+                "SELECT value, updated_at FROM settings WHERE key = ?"
+            ).bind(triggerKey).first();
+
+            if (result) {
+                try {
+                    const data = JSON.parse(result.value as string);
+                    // Check if trigger is still valid (within 5 minutes)
+                    const age = Date.now() - data.timestamp;
+                    if (age < 300000) { // 5 minutes
+                        return jsonResponse({
+                            success: true,
+                            triggered: true,
+                            timestamp: data.timestamp,
+                            requested_by: data.requested_by,
+                        }, 200, corsHeaders);
+                    } else {
+                        // Trigger expired, delete it
+                        await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(triggerKey).run();
+                    }
+                } catch {
+                    // If parse fails, treat as no trigger
+                }
+            }
+        } catch (d1Error) {
+            console.warn('D1 read error, falling back to KV:', d1Error);
+        }
+
+        // Fallback to KV
+        const triggerData = await env.SENTINEL_DATA.get(triggerKey);
         if (triggerData) {
             const data = JSON.parse(triggerData);
             return jsonResponse({
