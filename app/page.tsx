@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Domain, ISP, Status, AppSettings, LogEntry, ISPResult } from '../types';
 import { checkDomainHealth, getHostname } from '../services/dnsService';
 import { sendTelegramAlert } from '../services/telegramService';
+import { fetchResultsFromWorkers, fetchDomainResults } from '../services/resultsService';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { DomainCard } from '../components/DomainCard';
 import { Plus, Activity, Terminal, Shield, Clock, Play } from 'lucide-react';
