@@ -28,11 +28,14 @@ const defaultSettings: AppSettings = {
 
 const createEmptyResults = (): Record<ISP, ISPResult> => {
     // Create separate slots for all ISPs (TRUE and DTAC are separate for UI clarity)
-    const keys = Object.values(ISP);
-    const results: any = {};
-    keys.forEach(k => {
-        results[k] = { isp: k, status: Status.PENDING };
-    });
+    // Note: ISP.TRUE and ISP.DTAC have same enum value, so we need to create them explicitly
+    const results: any = {
+        [ISP.GLOBAL]: { isp: ISP.GLOBAL, status: Status.PENDING },
+        [ISP.AIS]: { isp: ISP.AIS, status: Status.PENDING },
+        [ISP.TRUE]: { isp: ISP.TRUE, status: Status.PENDING },
+        [ISP.DTAC]: { isp: ISP.DTAC, status: Status.PENDING }, // Separate slot even though value is same as TRUE
+        [ISP.NT]: { isp: ISP.NT, status: Status.PENDING },
+    };
     return results;
 };
 
@@ -269,15 +272,20 @@ export default function Home() {
                             const ispName = workerResult.isp_name;
                             console.log(`🔄 [loadResultsFromWorkers] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
                             
-                            // If result is for True/DTAC, update both TRUE and DTAC slots (they share the same network)
-                            const targetISPs = (isp === ISP.TRUE) ? [ISP.TRUE, ISP.DTAC] : [isp];
+                            // If result is for True/DTAC (mapped from True or DTAC), update both TRUE and DTAC slots (they share the same network)
+                            // Check if the original ISP name is True or DTAC, or if mapped ISP is TRUE
+                            const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' || 
+                                               ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
+                            const targetISPs = isTrueOrDTAC ? [ISP.TRUE, ISP.DTAC] : [isp];
                             
                             targetISPs.forEach(targetISP => {
-                                if (updatedResults[targetISP]) {
-                                    const existingResult = updatedResults[targetISP];
-                                    console.log(`✅ [loadResultsFromWorkers] Updating ${targetISP} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
-                                    updatedResults[targetISP] = {
-                                        isp: targetISP,
+                                // Use the enum key directly (ISP.TRUE or ISP.DTAC) to access the slot
+                                const slotKey = targetISP as ISP;
+                                if (updatedResults[slotKey]) {
+                                    const existingResult = updatedResults[slotKey];
+                                    console.log(`✅ [loadResultsFromWorkers] Updating ${slotKey} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                    updatedResults[slotKey] = {
+                                        isp: slotKey,
                                         status: workerResult.status as Status,
                                         ip: workerResult.ip || '',
                                         latency: workerResult.latency || 0,
@@ -287,7 +295,7 @@ export default function Home() {
                                         timestamp: workerResult.timestamp,
                                     };
                                 } else {
-                                    console.warn(`⚠️ [loadResultsFromWorkers] No result slot for ISP: ${targetISP} (mapped from ${ispName})`);
+                                    console.warn(`⚠️ [loadResultsFromWorkers] No result slot for ISP: ${slotKey} (mapped from ${ispName})`);
                                 }
                             });
                         });
