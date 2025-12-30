@@ -57,13 +57,23 @@ export default {
             return handleGetDomains(request, env, corsHeaders);
         }
 
-    if (url.pathname === '/api/results' && request.method === 'GET') {
-      return handleGetResults(request, env, corsHeaders);
-    }
+        if (url.pathname === '/api/results' && request.method === 'GET') {
+            return handleGetResults(request, env, corsHeaders);
+        }
 
     // Update domains list (for frontend to sync)
     if (url.pathname === '/api/mobile-sync/domains' && request.method === 'POST') {
       return handleUpdateDomains(request, env, corsHeaders);
+    }
+
+    // Trigger mobile app to check DNS (for frontend to request)
+    if (url.pathname === '/api/trigger-check' && request.method === 'POST') {
+      return handleTriggerCheck(request, env, corsHeaders);
+    }
+
+    // Check if check is triggered (for mobile app to poll)
+    if (url.pathname === '/api/trigger-check' && request.method === 'GET') {
+      return handleGetTriggerCheck(request, env, corsHeaders);
     }
 
     // DNS Check API - Uses DoH for Global, cached results for ISP-specific

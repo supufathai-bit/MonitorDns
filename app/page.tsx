@@ -373,15 +373,100 @@ export default function Home() {
     addLog('Starting full scan...', 'info');
     
     const currentSettings = settingsRef.current;
-    if (currentSettings.checkInterval > 0) {
-        setNextScanTime(Date.now() + (currentSettings.checkInterval * 60 * 1000));
-    }
+    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.backendUrl;
+    
+    if (workersUrl) {
+      // Use mobile app results from Workers API
+      try {
+        addLog('Fetching results from mobile app...', 'info');
+        const response = await fetchResultsFromWorkers(workersUrl);
+        
+        if (response.success && response.results.length > 0) {
+          addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
+          
+          // Group results by hostname
+          const resultsByHostname = new Map<string, typeof response.results>();
+          response.results.forEach(result => {
+            if (!resultsByHostname.has(result.hostname)) {
+              resultsByHostname.set(result.hostname, []);
+            }
+            resultsByHostname.get(result.hostname)!.push(result);
+          });
 
-    const domainIds = domainsRef.current.map(d => d.id);
-    for (const id of domainIds) {
+          // Update domains with results
+          setDomains(prev => prev.map(domain => {
+            const hostnameResults = resultsByHostname.get(domain.hostname);
+            if (!hostnameResults || hostnameResults.length === 0) {
+              return domain;
+            }
+
+            // Convert Workers results to ISPResult format
+            const updatedResults = { ...domain.results };
+            hostnameResults.forEach(workerResult => {
+              const isp = workerResult.isp_name as ISP;
+              if (updatedResults[isp]) {
+                updatedResults[isp] = {
+                  isp: isp,
+                  status: workerResult.status as Status,
+                  ip: workerResult.ip || '',
+                  latency: workerResult.latency || 0,
+                  details: `From mobile app (${new Date(workerResult.timestamp).toLocaleString()})`,
+                  source: 'mobile-app',
+                  deviceId: workerResult.device_id,
+                  timestamp: workerResult.timestamp,
+                };
+              }
+            });
+
+            // Find latest timestamp
+            const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
+
+            return {
+              ...domain,
+              results: updatedResults,
+              lastCheck: latestTimestamp,
+            };
+          }));
+
+          // Check for blocked domains
+          const blockedDomains: Array<{ domain: string; isps: string[] }> = [];
+          domainsRef.current.forEach(domain => {
+            const blockedISPs = Object.values(domain.results)
+              .filter(r => r.status === Status.BLOCKED)
+              .map(r => r.isp);
+            if (blockedISPs.length > 0) {
+              blockedDomains.push({ domain: domain.hostname, isps: blockedISPs });
+            }
+          });
+
+          if (blockedDomains.length > 0) {
+            blockedDomains.forEach(({ domain, isps }) => {
+              addLog(`${domain} BLOCKED on ${isps.join(', ')}`, 'alert');
+            });
+          } else {
+            addLog('All domains are active', 'success');
+          }
+        } else {
+          addLog('No results found from mobile app. Please check from mobile app first.', 'info');
+        }
+      } catch (error) {
+        console.error('Error fetching results from Workers:', error);
+        addLog('Failed to fetch results from mobile app', 'error');
+      }
+    } else {
+      // Fallback: Use local DNS check (less accurate)
+      addLog('Workers URL not configured, using local DNS check (less accurate)', 'info');
+      if (currentSettings.checkInterval > 0) {
+        setNextScanTime(Date.now() + (currentSettings.checkInterval * 60 * 1000));
+      }
+
+      const domainIds = domainsRef.current.map(d => d.id);
+      for (const id of domainIds) {
         await checkSingleDomain(id);
         await new Promise(r => setTimeout(r, 500)); 
+      }
     }
+    
     setLoading(false);
     addLog('Scan complete.', 'success');
   }, [loading, checkSingleDomain, addLog]);
