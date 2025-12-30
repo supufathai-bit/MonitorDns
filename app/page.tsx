@@ -135,7 +135,7 @@ export default function Home() {
                     setDomains(prev => prev.map(domain => {
                         const normalizedDomainHostname = normalizeHostname(domain.hostname);
                         const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
-                        
+
                         if (!hostnameResults || hostnameResults.length === 0) {
                             console.log(`⚠️ [loadResultsFromWorkers] No results for ${domain.hostname} (normalized: ${normalizedDomainHostname})`);
                             console.log(`   Available normalized hostnames:`, Array.from(resultsByHostname.keys()));
@@ -408,9 +408,32 @@ export default function Home() {
                 });
 
                 if (!triggerResponse.ok) {
-                    const errorText = await triggerResponse.text();
-                    addLog(`Failed to trigger mobile app: ${triggerResponse.status}`, 'error');
+                    let errorText = '';
+                    let errorData: any = null;
+                    try {
+                        errorText = await triggerResponse.text();
+                        errorData = JSON.parse(errorText);
+                    } catch {
+                        // If parsing fails, use errorText as is
+                    }
+                    
                     console.error('Trigger error:', errorText);
+                    console.error('Workers URL:', workersUrl);
+                    console.error('Response status:', triggerResponse.status);
+                    
+                    // Check for KV limit error
+                    if (triggerResponse.status === 429 || (errorData && errorData.error && errorData.error.includes('limit exceeded'))) {
+                        addLog(`KV write limit exceeded for today. Please try again tomorrow.`, 'error');
+                        addLog(`Error: ${errorData?.error || errorText}`, 'error');
+                    } else {
+                        addLog(`Failed to trigger mobile app: ${triggerResponse.status}`, 'error');
+                        if (errorData?.error) {
+                            addLog(`Error: ${errorData.error}`, 'error');
+                        } else if (errorText) {
+                            addLog(`Error: ${errorText}`, 'error');
+                        }
+                    }
+                    
                     setLoading(false);
                     addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
                     return;

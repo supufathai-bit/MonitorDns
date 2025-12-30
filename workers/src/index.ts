@@ -2,6 +2,7 @@
 // This handles API requests since Cloudflare Pages is static
 
 export interface Env {
+    // @ts-ignore - KVNamespace is provided by Cloudflare Workers runtime
     SENTINEL_DATA: KVNamespace;
     API_KEY?: string; // Optional API key
 }
@@ -115,42 +116,109 @@ async function handleMobileSync(
             }
         }
 
-        // Store results in KV
+        // Store results in KV (optimized to reduce KV writes)
         const timestamp = Date.now();
-        const syncKey = `sync:${device_id}:${timestamp}`;
 
-        await env.SENTINEL_DATA.put(syncKey, JSON.stringify({
-            device_id,
-            device_info,
-            results,
-            timestamp,
-        }));
+        try {
+            // Store latest result per domain+ISP (only update if changed or expired)
+            // Batch all writes together to reduce operations
+            const writePromises: Promise<void>[] = [];
 
-        // Store latest result per domain+ISP
-        for (const result of results) {
-            const latestKey = `latest:${result.hostname}:${result.isp_name}`;
-            await env.SENTINEL_DATA.put(latestKey, JSON.stringify({
-                ...result,
-                device_id,
-                device_info,
-                timestamp,
-                source: 'mobile-app',
-            }), {
-                expirationTtl: 86400 * 7, // 7 days
-            });
+            for (const result of results) {
+                const latestKey = `latest:${result.hostname}:${result.isp_name}`;
+
+                // Check if we need to update (only if different or missing)
+                const existingData = await env.SENTINEL_DATA.get(latestKey);
+                let shouldUpdate = true;
+
+                if (existingData) {
+                    try {
+                        const existing = JSON.parse(existingData);
+                        // Only update if status changed or timestamp is much older (5 minutes)
+                        if (existing.status === result.status &&
+                            existing.ip === result.ip &&
+                            (timestamp - existing.timestamp) < 300000) {
+                            shouldUpdate = false;
+                        }
+                    } catch {
+                        // If parse fails, update anyway
+                    }
+                }
+
+                if (shouldUpdate) {
+                    writePromises.push(
+                        env.SENTINEL_DATA.put(latestKey, JSON.stringify({
+                            ...result,
+                            device_id,
+                            device_info,
+                            timestamp,
+                            source: 'mobile-app',
+                        }), {
+                            expirationTtl: 86400 * 7, // 7 days
+                        }).catch(err => {
+                            console.error(`Failed to write ${latestKey}:`, err);
+                            throw err;
+                        })
+                    );
+                }
+            }
+
+            // Store device info (only if changed)
+            const deviceKey = `device:${device_id}`;
+            const existingDevice = await env.SENTINEL_DATA.get(deviceKey);
+            let shouldUpdateDevice = true;
+
+            if (existingDevice) {
+                try {
+                    const existing = JSON.parse(existingDevice);
+                    // Only update if device info changed or last sync was more than 1 hour ago
+                    if (existing.device_info?.isp === device_info.isp &&
+                        existing.device_info?.network_type === device_info.network_type &&
+                        (timestamp - (existing.last_sync || 0)) < 3600000) {
+                        shouldUpdateDevice = false;
+                    }
+                } catch {
+                    // If parse fails, update anyway
+                }
+            }
+
+            if (shouldUpdateDevice) {
+                writePromises.push(
+                    env.SENTINEL_DATA.put(deviceKey, JSON.stringify({
+                        device_id,
+                        device_info,
+                        last_sync: timestamp,
+                    })).catch(err => {
+                        console.error(`Failed to write ${deviceKey}:`, err);
+                        throw err;
+                    })
+                );
+            }
+
+            // Clear trigger flag after sync (mobile app has checked)
+            const triggerKey = 'trigger:check';
+            writePromises.push(
+                env.SENTINEL_DATA.delete(triggerKey).catch(err => {
+                    console.error(`Failed to delete ${triggerKey}:`, err);
+                    // Don't throw - deletion failure is not critical
+                })
+            );
+
+            // Execute all writes in parallel
+            await Promise.all(writePromises);
+
+        } catch (kvError: any) {
+            // Check if it's a KV limit error
+            if (kvError.message && kvError.message.includes('limit exceeded')) {
+                console.error('KV limit exceeded:', kvError);
+                return jsonResponse({
+                    success: false,
+                    error: 'KV write limit exceeded for today. Please try again tomorrow or upgrade your Cloudflare plan.',
+                    message: 'Daily KV write limit reached',
+                }, 429, corsHeaders); // 429 Too Many Requests
+            }
+            throw kvError; // Re-throw other errors
         }
-
-        // Clear trigger flag after sync (mobile app has checked)
-        const triggerKey = 'trigger:check';
-        await env.SENTINEL_DATA.delete(triggerKey);
-
-        // Store device info
-        const deviceKey = `device:${device_id}`;
-        await env.SENTINEL_DATA.put(deviceKey, JSON.stringify({
-            device_id,
-            device_info,
-            last_sync: timestamp,
-        }));
 
         return jsonResponse({
             success: true,
@@ -243,14 +311,40 @@ async function handleUpdateDomains(
             return domain;
         });
 
-        // Store in KV
+        // Store in KV (only if changed)
         const domainsKey = 'domains:list';
-        await env.SENTINEL_DATA.put(domainsKey, JSON.stringify(hostnames));
+        const existingDomains = await env.SENTINEL_DATA.get(domainsKey);
+        let shouldUpdate = true;
+
+        if (existingDomains) {
+            try {
+                const existing = JSON.parse(existingDomains);
+                // Compare arrays (order-independent)
+                const existingSorted = [...existing].sort().join(',');
+                const newSorted = [...hostnames].sort().join(',');
+                if (existingSorted === newSorted) {
+                    shouldUpdate = false;
+                }
+            } catch {
+                // If parse fails, update anyway
+            }
+        }
+
+        if (shouldUpdate) {
+            await env.SENTINEL_DATA.put(domainsKey, JSON.stringify(hostnames)).catch((kvError: any) => {
+                // Check if it's a KV limit error
+                if (kvError.message && kvError.message.includes('limit exceeded')) {
+                    throw new Error('KV put() limit exceeded for the day.');
+                }
+                throw kvError;
+            });
+        }
 
         return jsonResponse({
             success: true,
             message: `Updated ${hostnames.length} domains`,
             domains: hostnames,
+            updated: shouldUpdate,
         }, 200, corsHeaders);
 
     } catch (error: any) {
@@ -270,8 +364,28 @@ async function handleTriggerCheck(
     corsHeaders: Record<string, string>
 ): Promise<Response> {
     try {
-        // Set trigger flag in KV (expires in 5 minutes)
+        // Check if trigger already exists (avoid unnecessary writes)
         const triggerKey = 'trigger:check';
+        const existingTrigger = await env.SENTINEL_DATA.get(triggerKey);
+
+        if (existingTrigger) {
+            try {
+                const existing = JSON.parse(existingTrigger);
+                // If trigger was set less than 1 minute ago, don't update
+                if (Date.now() - existing.timestamp < 60000) {
+                    return jsonResponse({
+                        success: true,
+                        message: 'Check already triggered. Mobile app will check DNS soon.',
+                        timestamp: existing.timestamp,
+                        cached: true,
+                    }, 200, corsHeaders);
+                }
+            } catch {
+                // If parse fails, continue to update
+            }
+        }
+
+        // Set trigger flag in KV (expires in 5 minutes)
         const timestamp = Date.now();
 
         await env.SENTINEL_DATA.put(triggerKey, JSON.stringify({
@@ -280,6 +394,12 @@ async function handleTriggerCheck(
             requested_by: 'frontend',
         }), {
             expirationTtl: 300, // 5 minutes
+        }).catch((kvError: any) => {
+            // Check if it's a KV limit error
+            if (kvError.message && kvError.message.includes('limit exceeded')) {
+                throw new Error('KV put() limit exceeded for the day.');
+            }
+            throw kvError;
         });
 
         return jsonResponse({
@@ -290,6 +410,16 @@ async function handleTriggerCheck(
 
     } catch (error: any) {
         console.error('Trigger check error:', error);
+
+        // Return specific error message for KV limit
+        if (error.message && error.message.includes('limit exceeded')) {
+            return jsonResponse({
+                success: false,
+                error: 'KV put() limit exceeded for the day.',
+                message: 'Daily KV write limit reached. Please try again tomorrow or upgrade your Cloudflare plan.',
+            }, 429, corsHeaders); // 429 Too Many Requests
+        }
+
         return jsonResponse(
             { error: error.message || 'Internal server error' },
             500,
