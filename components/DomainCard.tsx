@@ -152,7 +152,67 @@ export const DomainCard: React.FC<DomainCardProps> = ({ domain, onDelete, onRefr
 
       {/* Grid Badges */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
-        {Object.values(domain.results).map(renderISPBadge)}
+        {Object.entries(domain.results).map(([key, result]) => {
+          // Get display name based on key (to distinguish True and DTAC)
+          const displayName = key === 'DTAC' ? 'DTAC' : 
+                            key === 'True' ? 'True' :
+                            result.isp === ISP.GLOBAL ? 'Global (Google)' : 
+                            result.isp;
+          
+          const isBlocked = result.status === Status.BLOCKED;
+          const isPending = result.status === Status.PENDING;
+          const isError = result.status === Status.ERROR;
+          const isManual = result.manualOverride;
+
+          let borderColor = 'border-gray-700';
+          if (isBlocked) borderColor = 'border-neon-red/50 bg-neon-red/10';
+          else if (!isPending && !isError) borderColor = 'border-neon-green/30 bg-neon-green/5';
+          else if (isError) borderColor = 'border-yellow-500/30 bg-yellow-500/10';
+
+          return (
+            <div 
+              key={key}
+              className={`flex flex-col items-center justify-center p-3 rounded-lg border ${borderColor} transition-all duration-300 cursor-pointer hover:border-neon-blue/50 ${isManual ? 'ring-2 ring-neon-blue/30' : ''}`}
+              onClick={() => handleISPStatusOverride(result.isp, result.status)}
+              title={isManual ? 'Manually set - Click to change' : 'Click to manually set status'}
+            >
+              <span className="text-[10px] uppercase font-bold text-gray-400 mb-2 tracking-wider flex items-center gap-1">
+                {displayName}
+                {isManual && <span className="text-neon-blue text-[8px]">✎</span>}
+              </span>
+              
+              {isPending ? (
+                <div className="w-6 h-6 border-2 border-neon-blue border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                  {isBlocked ? (
+                    <ShieldAlert className="w-8 h-8 text-neon-red mb-1 drop-shadow-[0_0_8px_rgba(255,0,85,0.5)]" />
+                  ) : isError ? (
+                    <div className="w-8 h-8 rounded-full border-2 border-yellow-500 flex items-center justify-center mb-1 text-yellow-500 font-bold">!</div>
+                  ) : (
+                    <CheckCircle className="w-8 h-8 text-neon-green mb-1 drop-shadow-[0_0_8px_rgba(0,255,157,0.3)]" />
+                  )}
+                  
+                  <span className={`text-[10px] font-bold ${getStatusColor(result.status)}`}>
+                    {result.status}
+                  </span>
+                  
+                  {result.ip && (
+                    <span className="text-[9px] font-mono text-gray-500 mt-1 bg-black/30 px-1 rounded truncate max-w-full">
+                      {result.ip}
+                    </span>
+                  )}
+                  
+                  {isError && !isManual && (
+                    <span className="text-[8px] text-yellow-400 mt-1 italic text-center px-1">
+                      Click to set
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Technical Details / Dig Command Helper */}
