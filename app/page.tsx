@@ -349,9 +349,18 @@ export default function Home() {
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUrl) return;
+    
+    console.log('=== HANDLE ADD DOMAIN DEBUG ===');
+    console.log('newUrl:', newUrl);
+    
+    if (!newUrl) {
+      console.log('❌ No URL provided, returning');
+      return;
+    }
     
     const hostname = getHostname(newUrl);
+    console.log('Hostname:', hostname);
+    
     const newDomain: Domain = {
       id: generateId(),
       url: newUrl,
@@ -362,12 +371,25 @@ export default function Home() {
     };
 
     const updatedDomains = [...domainsRef.current, newDomain];
+    console.log('Updated domains:', updatedDomains.map(d => d.hostname));
+    console.log('Current domainsRef:', domainsRef.current.map(d => d.hostname));
+    
     setDomains(updatedDomains);
     setNewUrl('');
     addLog(`Added domain: ${hostname}`, 'info');
     
+    console.log('About to call syncDomainsToWorkers...');
+    console.log('syncDomainsToWorkers function:', typeof syncDomainsToWorkers);
+    
     // Sync immediately after adding
-    await syncDomainsToWorkers(updatedDomains);
+    try {
+      await syncDomainsToWorkers(updatedDomains);
+      console.log('✅ syncDomainsToWorkers completed');
+    } catch (error) {
+      console.error('❌ Error in syncDomainsToWorkers:', error);
+    }
+    
+    console.log('=== END HANDLE ADD DOMAIN DEBUG ===');
   };
 
   const handleDeleteDomain = async (id: string) => {
