@@ -1,13 +1,16 @@
 import { ISP, Status, ISPResult } from '../types';
 import { ISP_DNS_SERVERS } from '../constants';
 
-// Helper to extract hostname
+// Helper to extract hostname and normalize it (remove www, lowercase)
 export const getHostname = (url: string): string => {
   try {
     const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-    return urlObj.hostname;
+    const hostname = urlObj.hostname;
+    // Normalize: remove www prefix and convert to lowercase
+    return hostname.toLowerCase().replace(/^www\./, '');
   } catch (e) {
-    return url;
+    // If URL parsing fails, try to normalize the input directly
+    return url.toLowerCase().replace(/^www\./, '').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   }
 };
 

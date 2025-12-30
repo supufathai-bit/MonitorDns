@@ -112,21 +112,37 @@ export default function Home() {
                 if (response.success && response.results.length > 0) {
                     addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
 
-                    // Group results by hostname
+                    // Normalize hostname for matching (remove www, lowercase)
+                    const normalizeHostname = (hostname: string): string => {
+                        return hostname.toLowerCase().replace(/^www\./, '');
+                    };
+
+                    // Group results by normalized hostname
                     const resultsByHostname = new Map<string, typeof response.results>();
                     response.results.forEach(result => {
-                        if (!resultsByHostname.has(result.hostname)) {
-                            resultsByHostname.set(result.hostname, []);
+                        const normalized = normalizeHostname(result.hostname);
+                        if (!resultsByHostname.has(normalized)) {
+                            resultsByHostname.set(normalized, []);
                         }
-                        resultsByHostname.get(result.hostname)!.push(result);
+                        resultsByHostname.get(normalized)!.push(result);
                     });
+
+                    console.log('📊 [loadResultsFromWorkers] Results by normalized hostname:', Array.from(resultsByHostname.entries()).map(([h, r]) => [h, r.length]));
+                    console.log('📊 [loadResultsFromWorkers] All result hostnames:', response.results.map(r => `${r.hostname} -> ${normalizeHostname(r.hostname)}`));
+                    console.log('📊 [loadResultsFromWorkers] Current domains:', domainsRef.current.map(d => `${d.hostname} -> ${normalizeHostname(d.hostname)}`));
 
                     // Update domains with results
                     setDomains(prev => prev.map(domain => {
-                        const hostnameResults = resultsByHostname.get(domain.hostname);
+                        const normalizedDomainHostname = normalizeHostname(domain.hostname);
+                        const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
+                        
                         if (!hostnameResults || hostnameResults.length === 0) {
+                            console.log(`⚠️ [loadResultsFromWorkers] No results for ${domain.hostname} (normalized: ${normalizedDomainHostname})`);
+                            console.log(`   Available normalized hostnames:`, Array.from(resultsByHostname.keys()));
                             return domain;
                         }
+
+                        console.log(`✅ [loadResultsFromWorkers] Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
 
                         // Convert Workers results to ISPResult format
                         const updatedResults = { ...domain.results };
@@ -447,11 +463,11 @@ export default function Home() {
                                 setDomains(prev => prev.map(domain => {
                                     const normalizedDomainHostname = normalizeHostname(domain.hostname);
                                     const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
-                                    
+
                                     if (!hostnameResults || hostnameResults.length === 0) {
                                         console.log(`⚠️ No results for ${domain.hostname} (normalized: ${normalizedDomainHostname})`);
                                         console.log(`   Available normalized hostnames:`, Array.from(resultsByHostname.keys()));
-                                        
+
                                         // If no results, change PENDING to ERROR to stop loading spinner
                                         const updatedResults = { ...domain.results };
                                         Object.keys(updatedResults).forEach(ispKey => {
