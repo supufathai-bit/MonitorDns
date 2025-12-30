@@ -135,20 +135,49 @@ async function handleMobileSync(
             }
         }
 
-        // Store results in KV (optimized to reduce KV writes)
+        // Store results in D1 (primary) and KV (backup)
         const timestamp = Date.now();
         let kvWriteCount = 0; // Track KV writes (declared outside try block for error handling)
         const MAX_KV_WRITES = 50; // Limit writes per sync to avoid hitting daily limit
 
         try {
-            // Store latest result per domain+ISP (only update if changed or expired)
+            // Save to D1 first (primary storage - no write limits!)
+            try {
+                const d1Stmt = env.DB.prepare(
+                    "INSERT OR REPLACE INTO results (id, hostname, isp_name, status, ip, latency, device_id, device_info, timestamp, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                );
+                
+                const d1Batch = results.map(result => {
+                    const resultId = `${result.hostname}:${result.isp_name}:${device_id}`;
+                    return d1Stmt.bind(
+                        resultId,
+                        result.hostname,
+                        result.isp_name,
+                        result.status,
+                        result.ip || null,
+                        result.latency || null,
+                        device_id,
+                        JSON.stringify(device_info || {}),
+                        timestamp,
+                        'mobile-app'
+                    );
+                });
+                
+                await env.DB.batch(d1Batch);
+                console.log(`Mobile sync: Saved ${results.length} results to D1`);
+            } catch (d1Error) {
+                console.error('D1 save error (non-critical, continuing with KV):', d1Error);
+                // Continue with KV even if D1 fails
+            }
+
+            // Store latest result per domain+ISP in KV (for backward compatibility and faster reads)
             // Batch all writes together to reduce operations
             const writePromises: Promise<void>[] = [];
 
             for (const result of results) {
                 // Stop if we're approaching the limit
                 if (kvWriteCount >= MAX_KV_WRITES) {
-                    console.warn(`Reached KV write limit (${MAX_KV_WRITES}) for this sync. Skipping remaining results.`);
+                    console.warn(`Reached KV write limit (${MAX_KV_WRITES}) for this sync. Skipping remaining KV writes.`);
                     break;
                 }
 
@@ -574,6 +603,70 @@ async function handleGetResults(
         const hostname = url.searchParams.get('hostname');
         const isp = url.searchParams.get('isp');
 
+        // Try D1 first (primary storage)
+        try {
+            let d1Query;
+            if (hostname && isp) {
+                // Get latest result for specific domain+ISP
+                d1Query = env.DB.prepare(
+                    "SELECT * FROM results WHERE hostname = ? AND isp_name = ? ORDER BY timestamp DESC LIMIT 1"
+                ).bind(hostname, isp);
+            } else if (hostname) {
+                // Get all results for specific domain
+                d1Query = env.DB.prepare(
+                    "SELECT * FROM results WHERE hostname = ? ORDER BY timestamp DESC"
+                ).bind(hostname);
+            } else {
+                // Get all latest results (get latest for each domain+ISP combination)
+                // D1 doesn't support window functions, so we'll get the most recent result per hostname+isp_name
+                d1Query = env.DB.prepare(
+                    "SELECT r1.* FROM results r1 INNER JOIN (SELECT hostname, isp_name, MAX(timestamp) as max_timestamp FROM results GROUP BY hostname, isp_name) r2 ON r1.hostname = r2.hostname AND r1.isp_name = r2.isp_name AND r1.timestamp = r2.max_timestamp ORDER BY r1.timestamp DESC"
+                );
+            }
+
+            const d1Result = await d1Query.all();
+
+            if (d1Result.results && d1Result.results.length > 0) {
+                const formattedResults = d1Result.results.map((row: any) => {
+                    let deviceInfo = {};
+                    try {
+                        deviceInfo = JSON.parse(row.device_info || '{}');
+                    } catch {
+                        deviceInfo = {};
+                    }
+
+                    return {
+                        hostname: row.hostname,
+                        isp_name: row.isp_name,
+                        status: row.status,
+                        ip: row.ip,
+                        latency: row.latency,
+                        device_id: row.device_id,
+                        device_info: deviceInfo,
+                        timestamp: row.timestamp,
+                        source: row.source || 'mobile-app',
+                    };
+                });
+
+                if (hostname && isp) {
+                    return jsonResponse({
+                        success: true,
+                        result: formattedResults[0] || null,
+                        message: formattedResults[0] ? undefined : 'No result found',
+                    }, 200, corsHeaders);
+                }
+
+                return jsonResponse({
+                    success: true,
+                    results: formattedResults,
+                    count: formattedResults.length,
+                }, 200, corsHeaders);
+            }
+        } catch (d1Error) {
+            console.warn('D1 read error, falling back to KV:', d1Error);
+        }
+
+        // Fallback to KV
         if (hostname && isp) {
             // Get latest result for specific domain+ISP
             const key = `latest:${hostname}:${isp}`;
@@ -593,7 +686,7 @@ async function handleGetResults(
             }, 200, corsHeaders);
         }
 
-        // Get all latest results
+        // Get all latest results from KV
         const keys = await env.SENTINEL_DATA.list({ prefix: 'latest:' });
         const results = await Promise.all(
             keys.keys.map(async (key) => {
