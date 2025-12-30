@@ -3,7 +3,9 @@
 
 export interface Env {
     // @ts-ignore - KVNamespace is provided by Cloudflare Workers runtime
-    SENTINEL_DATA: KVNamespace;
+    SENTINEL_DATA: KVNamespace;  // Keep for backward compatibility
+    // @ts-ignore - D1Database is provided by Cloudflare Workers runtime
+    DB: D1Database;  // D1 Database (better storage)
     API_KEY?: string; // Optional API key
 }
 
@@ -288,6 +290,33 @@ async function handleMobileSync(
     }
 }
 
+// Helper: Get domains from D1
+async function getDomainsFromD1(env: Env): Promise<string[]> {
+    try {
+        const result = await env.DB.prepare(
+            "SELECT hostname FROM domains WHERE is_monitoring = 1 ORDER BY hostname"
+        ).all();
+        
+        return result.results.map((row: any) => row.hostname);
+    } catch (error) {
+        console.error('D1 getDomains error:', error);
+        return [];
+    }
+}
+
+// Helper: Save domain to D1
+async function saveDomainToD1(env: Env, hostname: string, url?: string): Promise<void> {
+    const id = hostname.toLowerCase().replace(/^www\./, '');
+    await env.DB.prepare(
+        "INSERT OR REPLACE INTO domains (id, hostname, url, updated_at) VALUES (?, ?, ?, ?)"
+    ).bind(
+        id,
+        hostname.toLowerCase().replace(/^www\./, ''),
+        url || hostname,
+        Date.now()
+    ).run();
+}
+
 // Get domains to check (for mobile app)
 async function handleGetDomains(
     request: Request,
@@ -316,7 +345,7 @@ async function handleGetDomains(
                 console.error('Error parsing domains:', e);
             }
         }
-        
+
         // If still no domains, use defaults
         if (domains.length === 0) {
             domains = [
@@ -364,55 +393,58 @@ async function handleUpdateDomains(
             );
         }
 
-        // Extract hostnames from URLs if needed
+        // Extract and normalize hostnames
         const hostnames = domains.map(domain => {
-            // If it's a URL, extract hostname
+            let hostname = domain;
             if (domain.startsWith('http://') || domain.startsWith('https://')) {
                 try {
                     const url = new URL(domain);
-                    return url.hostname;
+                    hostname = url.hostname;
                 } catch {
-                    return domain;
+                    hostname = domain;
                 }
             }
-            // If it's already a hostname, use as is
-            return domain;
+            return hostname.replace(/^www\./i, '').toLowerCase();
         });
+        const uniqueHostnames = [...new Set(hostnames)].sort();
 
-        // Store in KV (only if changed)
-        const domainsKey = 'domains:list';
-        const existingDomains = await env.SENTINEL_DATA.get(domainsKey);
-        let shouldUpdate = true;
+        // Check if changed (compare with D1)
+        const existingDomains = await getDomainsFromD1(env);
+        const existingSorted = existingDomains.map(h => h.toLowerCase()).sort();
+        const newSorted = uniqueHostnames.map(h => h.toLowerCase()).sort();
+        const domainsChanged = JSON.stringify(existingSorted) !== JSON.stringify(newSorted);
 
-        if (existingDomains) {
-            try {
-                const existing = JSON.parse(existingDomains);
-                // Compare arrays (order-independent)
-                const existingSorted = [...existing].sort().join(',');
-                const newSorted = [...hostnames].sort().join(',');
-                if (existingSorted === newSorted) {
-                    shouldUpdate = false;
-                }
-            } catch {
-                // If parse fails, update anyway
-            }
+        if (!domainsChanged) {
+            return jsonResponse({
+                success: true,
+                message: 'Domains unchanged, no update needed',
+                domains: uniqueHostnames,
+                updated: false,
+            }, 200, corsHeaders);
         }
 
-        if (shouldUpdate) {
-            await env.SENTINEL_DATA.put(domainsKey, JSON.stringify(hostnames)).catch((kvError: any) => {
-                // Check if it's a KV limit error
-                if (kvError.message && kvError.message.includes('limit exceeded')) {
-                    throw new Error('KV put() limit exceeded for the day.');
-                }
-                throw kvError;
-            });
+        // Save to D1 (primary storage)
+        const stmt = env.DB.prepare("INSERT OR REPLACE INTO domains (id, hostname, url, updated_at) VALUES (?, ?, ?, ?)");
+        const batch = uniqueHostnames.map(hostname => 
+            stmt.bind(hostname, hostname, hostname, Date.now())
+        );
+        await env.DB.batch(batch);
+
+        // Also save to KV for backward compatibility
+        try {
+            await env.SENTINEL_DATA.put('domains:list', JSON.stringify(uniqueHostnames));
+        } catch (kvError: any) {
+            // KV error is not critical - D1 is primary
+            console.warn('Failed to update KV (non-critical):', kvError);
         }
+
+        console.log(`Updated ${uniqueHostnames.length} domains in D1`);
 
         return jsonResponse({
             success: true,
-            message: `Updated ${hostnames.length} domains`,
-            domains: hostnames,
-            updated: shouldUpdate,
+            message: `Updated ${uniqueHostnames.length} domains`,
+            domains: uniqueHostnames,
+            updated: true,
         }, 200, corsHeaders);
 
     } catch (error: any) {
@@ -682,13 +714,38 @@ async function handleDNSCheck(
     }
 }
 
-// Frontend Domains API - Get domains from KV
+// Frontend Domains API - Get domains from D1 (primary) or KV (fallback)
 async function handleGetFrontendDomains(
     request: Request,
     env: Env,
     corsHeaders: Record<string, string>
 ): Promise<Response> {
     try {
+        // Try D1 first
+        try {
+            const result = await env.DB.prepare(
+                "SELECT id, hostname, url, is_monitoring, telegram_chat_id FROM domains WHERE is_monitoring = 1 ORDER BY hostname"
+            ).all();
+            
+            if (result.results && result.results.length > 0) {
+                const domains = result.results.map((row: any) => ({
+                    id: row.id,
+                    hostname: row.hostname,
+                    url: row.url || row.hostname,
+                    isMonitoring: row.is_monitoring === 1,
+                    telegramChatId: row.telegram_chat_id || undefined,
+                }));
+                
+                return jsonResponse({
+                    success: true,
+                    domains,
+                }, 200, corsHeaders);
+            }
+        } catch (d1Error) {
+            console.error('D1 error, falling back to KV:', d1Error);
+        }
+        
+        // Fallback to KV
         const domainsKey = 'frontend:domains';
         const storedDomains = await env.SENTINEL_DATA.get(domainsKey);
 
@@ -807,12 +864,12 @@ async function handleSaveFrontendDomains(
 
         // Save to both keys: frontend:domains (for frontend) and domains:list (for mobile app)
         const writePromises: Promise<void>[] = [];
-        
+
         // Save full Domain objects to frontend:domains (for frontend to load)
         writePromises.push(
             env.SENTINEL_DATA.put(frontendDomainsKey, JSON.stringify(domains))
         );
-        
+
         // Save hostnames array to domains:list (for mobile app) - THIS IS THE KEY MOBILE APP USES
         writePromises.push(
             env.SENTINEL_DATA.put(legacyDomainsKey, JSON.stringify(uniqueHostnames))
