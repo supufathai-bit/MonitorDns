@@ -158,6 +158,38 @@ export default function Home() {
     loadResultsFromWorkers();
   }, [loadedRef.current, addLog]);
 
+  // Sync domains to Workers when component mounts (if not synced yet)
+  useEffect(() => {
+    if (!loadedRef.current) return;
+
+    const syncDomainsOnMount = async () => {
+      const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
+      if (!workersUrl) return;
+
+      try {
+        // Extract hostnames from domains
+        const hostnames = domains.map(d => d.hostname);
+        
+        // Sync to Workers API
+        const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domains: hostnames }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Domains synced to Workers on mount:', data.domains || hostnames);
+        }
+      } catch (error) {
+        console.error('Failed to sync domains on mount:', error);
+      }
+    };
+
+    // Sync once on mount
+    syncDomainsOnMount();
+  }, [loadedRef.current]);
+
   // Save Data on Change and Sync to Workers
   useEffect(() => {
     if (!loadedRef.current) return;
