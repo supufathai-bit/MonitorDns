@@ -176,14 +176,15 @@ async function handleMobileSync(
                 // Continue with KV even if D1 fails
             }
 
-            // Store latest result per domain+ISP in KV (for backward compatibility and faster reads)
-            // Batch all writes together to reduce operations
+            // Store latest result per domain+ISP in KV (optional backup for faster reads)
+            // D1 is primary, KV is just for backward compatibility and performance
+            // If KV limit exceeded, it's OK - D1 already saved successfully
             const writePromises: Promise<void>[] = [];
 
             for (const result of results) {
-                // Stop if we're approaching the limit
+                // Stop if we're approaching the limit (optional writes)
                 if (kvWriteCount >= MAX_KV_WRITES) {
-                    console.warn(`Reached KV write limit (${MAX_KV_WRITES}) for this sync. Skipping remaining KV writes.`);
+                    console.warn(`Reached KV write limit (${MAX_KV_WRITES}) for this sync. Skipping remaining KV writes (D1 already saved).`);
                     break;
                 }
 
@@ -203,7 +204,6 @@ async function handleMobileSync(
                     try {
                         const existing = JSON.parse(existingData);
                         // Only update if status changed or timestamp is much older (10 minutes)
-                        // Increased from 5 minutes to reduce writes
                         if (existing.status === result.status &&
                             existing.ip === result.ip &&
                             (timestamp - existing.timestamp) < 600000) {
@@ -227,31 +227,28 @@ async function handleMobileSync(
                         }), {
                             expirationTtl: 86400 * 7, // 7 days
                         }).catch(err => {
-                            console.error(`Failed to write ${latestKey}:`, err);
-                            // Check for KV limit error
-                            if (err.message && err.message.includes('limit exceeded')) {
-                                throw new Error('KV put() limit exceeded for the day.');
-                            }
-                            throw err;
+                            // KV writes are optional - don't throw error, just log
+                            console.warn(`Failed to write ${latestKey} to KV (non-critical, D1 already saved):`, err.message);
                         })
                     );
                 }
             }
 
-            // Store device info (only if changed) - Skip if we're at limit
-            if (kvWriteCount < MAX_KV_WRITES) {
-                const deviceKey = `device:${device_id}`;
-                const existingDevice = await env.SENTINEL_DATA.get(deviceKey);
+            // Store device info in D1 (primary storage - no write limits!)
+            try {
+                const existingDevice = await env.DB.prepare(
+                    "SELECT device_info, last_sync FROM devices WHERE device_id = ?"
+                ).bind(device_id).first();
+
                 let shouldUpdateDevice = true;
 
                 if (existingDevice) {
                     try {
-                        const existing = JSON.parse(existingDevice);
+                        const existing = JSON.parse(existingDevice.device_info as string);
                         // Only update if device info changed or last sync was more than 2 hours ago
-                        // Increased from 1 hour to reduce writes
-                        if (existing.device_info?.isp === device_info.isp &&
-                            existing.device_info?.network_type === device_info.network_type &&
-                            (timestamp - (existing.last_sync || 0)) < 7200000) {
+                        if (existing.isp === device_info.isp &&
+                            existing.network_type === device_info.network_type &&
+                            (timestamp - (existingDevice.last_sync as number)) < 7200000) {
                             shouldUpdateDevice = false;
                         }
                     } catch {
@@ -260,21 +257,49 @@ async function handleMobileSync(
                 }
 
                 if (shouldUpdateDevice) {
-                    kvWriteCount++;
-                    writePromises.push(
-                        env.SENTINEL_DATA.put(deviceKey, JSON.stringify({
-                            device_id,
-                            device_info,
-                            last_sync: timestamp,
-                        })).catch(err => {
-                            console.error(`Failed to write ${deviceKey}:`, err);
-                            // Check for KV limit error
-                            if (err.message && err.message.includes('limit exceeded')) {
-                                throw new Error('KV put() limit exceeded for the day.');
+                    await env.DB.prepare(
+                        "INSERT OR REPLACE INTO devices (device_id, device_info, last_sync, updated_at) VALUES (?, ?, ?, ?)"
+                    ).bind(
+                        device_id,
+                        JSON.stringify(device_info || {}),
+                        timestamp,
+                        timestamp
+                    ).run();
+                    console.log(`Device info saved to D1 for device ${device_id}`);
+                }
+            } catch (d1Error) {
+                console.warn('D1 device info save error (non-critical):', d1Error);
+                // Fallback to KV only if D1 fails and we're not at limit
+                if (kvWriteCount < MAX_KV_WRITES) {
+                    const deviceKey = `device:${device_id}`;
+                    const existingDevice = await env.SENTINEL_DATA.get(deviceKey);
+                    let shouldUpdateDevice = true;
+
+                    if (existingDevice) {
+                        try {
+                            const existing = JSON.parse(existingDevice);
+                            if (existing.device_info?.isp === device_info.isp &&
+                                existing.device_info?.network_type === device_info.network_type &&
+                                (timestamp - (existing.last_sync || 0)) < 7200000) {
+                                shouldUpdateDevice = false;
                             }
-                            throw err;
-                        })
-                    );
+                        } catch {
+                            // If parse fails, update anyway
+                        }
+                    }
+
+                    if (shouldUpdateDevice) {
+                        kvWriteCount++;
+                        writePromises.push(
+                            env.SENTINEL_DATA.put(deviceKey, JSON.stringify({
+                                device_id,
+                                device_info,
+                                last_sync: timestamp,
+                            })).catch(err => {
+                                console.error(`Failed to write ${deviceKey} to KV:`, err);
+                            })
+                        );
+                    }
                 }
             }
 
@@ -295,32 +320,19 @@ async function handleMobileSync(
                 })
             );
 
-            // Execute all writes in parallel
+            // Execute all KV writes in parallel (optional - failures are non-critical)
             if (writePromises.length > 0) {
-                await Promise.all(writePromises);
-                console.log(`Mobile sync: Saved ${kvWriteCount} results to KV (${results.length} total results)`);
+                await Promise.allSettled(writePromises); // Use allSettled to not fail on KV errors
+                const successfulWrites = writePromises.length;
+                console.log(`Mobile sync: Attempted ${successfulWrites} KV writes (${results.length} results saved to D1)`);
             } else {
-                console.log(`Mobile sync: No KV writes needed (all results unchanged)`);
+                console.log(`Mobile sync: No KV writes needed (all results unchanged, D1 already saved)`);
             }
 
         } catch (kvError: any) {
-            // Check if it's a KV limit error
-            const errorMessage = kvError.message || String(kvError);
-            if (errorMessage.includes('limit exceeded') || errorMessage.includes('limit reached')) {
-                console.error('KV limit exceeded (but D1 save succeeded):', kvError);
-                // Since D1 save succeeded, return success even if KV limit exceeded
-                // KV is only used for backward compatibility and faster reads
-                return jsonResponse({
-                    success: true,
-                    message: `Received ${results.length} results from device ${device_id} (saved to D1, KV limit reached)`,
-                    processed: results.length,
-                    timestamp,
-                    warning: 'KV write limit reached, but results saved to D1 successfully',
-                    kvLimitExceeded: true,
-                    savedToD1: true,
-                }, 200, corsHeaders); // Return 200 OK since D1 save succeeded
-            }
-            throw kvError; // Re-throw other errors
+            // KV errors are non-critical - D1 already saved successfully
+            console.warn('KV write error (non-critical, D1 save succeeded):', kvError);
+            // Continue - don't throw error since D1 save succeeded
         }
 
         return jsonResponse({
@@ -858,7 +870,37 @@ async function handleDNSCheck(
             }
         }
 
-        // For ISP-specific checks, return cached result from mobile app
+        // For ISP-specific checks, return cached result from D1 (primary) or KV (fallback)
+        // Try D1 first
+        try {
+            const d1Result = await env.DB.prepare(
+                "SELECT * FROM results WHERE hostname = ? AND isp_name = ? ORDER BY timestamp DESC LIMIT 1"
+            ).bind(hostname, isp_name).first();
+
+            if (d1Result) {
+                let deviceInfo = {};
+                try {
+                    deviceInfo = JSON.parse(d1Result.device_info as string || '{}');
+                } catch {
+                    deviceInfo = {};
+                }
+
+                return jsonResponse({
+                    isp: d1Result.isp_name as string || isp_name,
+                    status: d1Result.status as string,
+                    ip: d1Result.ip as string || '',
+                    latency: d1Result.latency as number || 0,
+                    details: `Cached result from mobile app (${new Date(d1Result.timestamp as number).toLocaleString()})`,
+                    dns_server: '',
+                    source: 'cached-mobile-app',
+                    note: '⚠️ This is a cached result. For real-time ISP DNS checking, use Android app.'
+                }, 200, corsHeaders);
+            }
+        } catch (d1Error) {
+            console.warn('D1 cache read error, falling back to KV:', d1Error);
+        }
+
+        // Fallback to KV
         const cacheKey = `latest:${hostname}:${isp_name}`;
         const cachedData = await env.SENTINEL_DATA.get(cacheKey);
 

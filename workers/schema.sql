@@ -32,8 +32,18 @@ CREATE TABLE IF NOT EXISTS results (
   UNIQUE(hostname, isp_name, device_id)
 );
 
+-- Device info table (for tracking mobile app devices)
+CREATE TABLE IF NOT EXISTS devices (
+  device_id TEXT PRIMARY KEY,
+  device_info TEXT NOT NULL,  -- JSON string
+  last_sync INTEGER NOT NULL,
+  created_at INTEGER DEFAULT (unixepoch()),
+  updated_at INTEGER DEFAULT (unixepoch())
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_results_hostname ON results(hostname);
 CREATE INDEX IF NOT EXISTS idx_results_timestamp ON results(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_results_device ON results(device_id);
+CREATE INDEX IF NOT EXISTS idx_devices_last_sync ON devices(last_sync DESC);
 
