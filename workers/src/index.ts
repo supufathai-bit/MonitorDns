@@ -821,13 +821,28 @@ async function handleGetFrontendDomains(
             ).all();
 
             if (result.results && result.results.length > 0) {
-                const domains = result.results.map((row: any) => ({
-                    id: row.id,
-                    hostname: row.hostname,
-                    url: row.url || row.hostname,
-                    isMonitoring: row.is_monitoring === 1,
-                    telegramChatId: row.telegram_chat_id || undefined,
-                }));
+                // Map D1 rows to Domain objects with all required fields
+                // Frontend expects: id, url, hostname, lastCheck, results, isMonitoring, telegramChatId
+                const domains = result.results.map((row: any) => {
+                    // Create empty results object with all ISP keys
+                    const emptyResults: Record<string, any> = {
+                        'Global (Google)': { isp: 'Global (Google)', status: 'PENDING' },
+                        'AIS': { isp: 'AIS', status: 'PENDING' },
+                        'True': { isp: 'True', status: 'PENDING' },
+                        'DTAC': { isp: 'DTAC', status: 'PENDING' },
+                        'NT': { isp: 'NT', status: 'PENDING' },
+                    };
+
+                    return {
+                        id: row.id || row.hostname, // Use hostname as ID if id is missing
+                        hostname: row.hostname,
+                        url: row.url || row.hostname,
+                        lastCheck: null, // Will be populated by frontend when results are loaded
+                        results: emptyResults, // Empty results that will be populated by frontend
+                        isMonitoring: row.is_monitoring === 1,
+                        telegramChatId: row.telegram_chat_id || undefined,
+                    };
+                });
 
                 return jsonResponse({
                     success: true,
