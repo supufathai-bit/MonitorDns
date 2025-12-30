@@ -214,49 +214,11 @@ export default function Home() {
     return () => clearTimeout(timeoutId);
   }, [domains, loadedRef.current, addLog]);
 
-  // Save Data on Change and Sync to Workers
+  // Save Data on Change
   useEffect(() => {
-    if (!loadedRef.current) return;
-    
-    // Save to localStorage
-    localStorage.setItem('sentinel_domains', JSON.stringify(domains));
-    
-    // Sync to Workers API
-    const syncDomainsToWorkers = async () => {
-      const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
-      if (!workersUrl) {
-        console.log('Workers URL not configured, skipping domains sync');
-        return;
-      }
-
-      try {
-        // Extract hostnames from domains
-        const hostnames = domains.map(d => d.hostname);
-        
-        addLog(`Syncing ${hostnames.length} domains to Workers API...`, 'info');
-        
-        const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ domains: hostnames }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          addLog(`Successfully synced ${data.domains?.length || hostnames.length} domains to Workers API`, 'success');
-          console.log('Domains synced to Workers API:', data.domains || hostnames);
-        } else {
-          const errorText = await response.text();
-          addLog(`Failed to sync domains: ${response.status}`, 'error');
-          console.error('Failed to sync domains to Workers:', errorText);
-        }
-      } catch (error) {
-        addLog('Failed to sync domains to Workers API', 'error');
-        console.error('Failed to sync domains to Workers:', error);
-      }
-    };
-
-    syncDomainsToWorkers();
+    if (loadedRef.current) {
+      localStorage.setItem('sentinel_domains', JSON.stringify(domains));
+    }
   }, [domains]);
 
   useEffect(() => {
