@@ -207,14 +207,35 @@ export default function Home() {
                         // Convert Workers results to ISPResult format
                         const updatedResults = { ...domain.results };
                         hostnameResults.forEach(workerResult => {
-                            const isp = workerResult.isp_name as ISP;
+                            // Map ISP name to match frontend ISP enum
+                            // Mobile app might send "Unknown", "AIS", "True", "DTAC", "NT", etc.
+                            let ispName = workerResult.isp_name;
+                            
+                            // Normalize ISP name to match frontend enum
+                            const ispMap: Record<string, ISP> = {
+                                'Unknown': ISP.AIS, // Default to AIS if unknown
+                                'unknown': ISP.AIS,
+                                'AIS': ISP.AIS,
+                                'True': ISP.TRUE,
+                                'TRUE': ISP.TRUE,
+                                'true': ISP.TRUE,
+                                'DTAC': ISP.DTAC,
+                                'dtac': ISP.DTAC,
+                                'NT': ISP.NT,
+                                'nt': ISP.NT,
+                                'Global (Google)': ISP.GLOBAL,
+                                'Global': ISP.GLOBAL,
+                            };
+                            
+                            const isp = ispMap[ispName] || ISP.AIS; // Default to AIS if not mapped
+                            
                             if (updatedResults[isp]) {
                                 updatedResults[isp] = {
                                     isp: isp,
                                     status: workerResult.status as Status,
                                     ip: workerResult.ip || '',
                                     latency: workerResult.latency || 0,
-                                    details: `From mobile app (${new Date(workerResult.timestamp).toLocaleString()})`,
+                                    details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
                                     source: 'mobile-app',
                                     deviceId: workerResult.device_id,
                                     timestamp: workerResult.timestamp,
@@ -650,14 +671,33 @@ export default function Home() {
                                     // Convert Workers results to ISPResult format
                                     const updatedResults = { ...domain.results };
                                     hostnameResults.forEach(workerResult => {
-                                        const isp = workerResult.isp_name as ISP;
+                                        // Map ISP name to match frontend ISP enum
+                                        let ispName = workerResult.isp_name;
+                                        
+                                        const ispMap: Record<string, ISP> = {
+                                            'Unknown': ISP.AIS,
+                                            'unknown': ISP.AIS,
+                                            'AIS': ISP.AIS,
+                                            'True': ISP.TRUE,
+                                            'TRUE': ISP.TRUE,
+                                            'true': ISP.TRUE,
+                                            'DTAC': ISP.DTAC,
+                                            'dtac': ISP.DTAC,
+                                            'NT': ISP.NT,
+                                            'nt': ISP.NT,
+                                            'Global (Google)': ISP.GLOBAL,
+                                            'Global': ISP.GLOBAL,
+                                        };
+                                        
+                                        const isp = ispMap[ispName] || ISP.AIS;
+                                        
                                         if (updatedResults[isp]) {
                                             updatedResults[isp] = {
                                                 isp: isp,
                                                 status: workerResult.status as Status,
                                                 ip: workerResult.ip || '',
                                                 latency: workerResult.latency || 0,
-                                                details: `From mobile app (${new Date(workerResult.timestamp).toLocaleString()})`,
+                                                details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
                                                 source: 'mobile-app',
                                                 deviceId: workerResult.device_id,
                                                 timestamp: workerResult.timestamp,
@@ -669,7 +709,25 @@ export default function Home() {
                                     Object.keys(updatedResults).forEach(ispKey => {
                                         const isp = ispKey as ISP;
                                         if (updatedResults[isp].status === Status.PENDING) {
-                                            const hasResult = hostnameResults.some(r => r.isp_name === isp);
+                                            // Check if any result maps to this ISP
+                                            const ispMap: Record<string, ISP> = {
+                                                'Unknown': ISP.AIS,
+                                                'unknown': ISP.AIS,
+                                                'AIS': ISP.AIS,
+                                                'True': ISP.TRUE,
+                                                'TRUE': ISP.TRUE,
+                                                'true': ISP.TRUE,
+                                                'DTAC': ISP.DTAC,
+                                                'dtac': ISP.DTAC,
+                                                'NT': ISP.NT,
+                                                'nt': ISP.NT,
+                                                'Global (Google)': ISP.GLOBAL,
+                                                'Global': ISP.GLOBAL,
+                                            };
+                                            const hasResult = hostnameResults.some(r => {
+                                                const mappedIsp = ispMap[r.isp_name] || ISP.AIS;
+                                                return mappedIsp === isp;
+                                            });
                                             if (!hasResult) {
                                                 updatedResults[isp] = {
                                                     ...updatedResults[isp],
@@ -778,9 +836,14 @@ export default function Home() {
     useEffect(() => {
         if (!loadedRef.current || domains.length === 0) return;
 
-        // Skip auto-scan if KV limit is exceeded
+        // Skip auto-scan if KV limit is exceeded (but we're using D1 now, so this is less critical)
+        // Note: D1 doesn't have write limits like KV, so this check is mainly for backward compatibility
         if (kvLimitExceededRef.current) {
-            console.log('⏸️ Auto-scan paused - KV limit exceeded');
+            console.log('⏸️ Auto-scan paused - KV limit exceeded (using D1 now, this should not happen)');
+            // Reset after 1 hour to allow retry
+            setTimeout(() => {
+                kvLimitExceededRef.current = false;
+            }, 3600000);
             return;
         }
 

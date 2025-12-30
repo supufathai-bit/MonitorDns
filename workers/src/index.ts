@@ -148,11 +148,17 @@ async function handleMobileSync(
                 );
                 
                 const d1Batch = results.map(result => {
-                    const resultId = `${result.hostname}:${result.isp_name}:${device_id}`;
+                    // Use device_info.isp if isp_name is "Unknown" or empty
+                    let ispName = result.isp_name;
+                    if (!ispName || ispName === 'Unknown' || ispName === 'unknown') {
+                        ispName = device_info?.isp || 'Unknown';
+                    }
+                    
+                    const resultId = `${result.hostname}:${ispName}:${device_id}`;
                     return d1Stmt.bind(
                         resultId,
                         result.hostname,
-                        result.isp_name,
+                        ispName, // Use corrected ISP name
                         result.status,
                         result.ip || null,
                         result.latency || null,
@@ -181,7 +187,13 @@ async function handleMobileSync(
                     break;
                 }
 
-                const latestKey = `latest:${result.hostname}:${result.isp_name}`;
+                // Use device_info.isp if isp_name is "Unknown" or empty
+                let ispName = result.isp_name;
+                if (!ispName || ispName === 'Unknown' || ispName === 'unknown') {
+                    ispName = device_info?.isp || 'Unknown';
+                }
+                
+                const latestKey = `latest:${result.hostname}:${ispName}`;
 
                 // Check if we need to update (only if different or missing)
                 const existingData = await env.SENTINEL_DATA.get(latestKey);
@@ -207,6 +219,7 @@ async function handleMobileSync(
                     writePromises.push(
                         env.SENTINEL_DATA.put(latestKey, JSON.stringify({
                             ...result,
+                            isp_name: ispName, // Use corrected ISP name
                             device_id,
                             device_info,
                             timestamp,
