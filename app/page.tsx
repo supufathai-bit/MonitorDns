@@ -158,9 +158,37 @@ export default function Home() {
     loadResultsFromWorkers();
   }, [loadedRef.current, addLog]);
 
-  // Save Data on Change
+  // Save Data on Change and Sync to Workers
   useEffect(() => {
-    if (loadedRef.current) localStorage.setItem('sentinel_domains', JSON.stringify(domains));
+    if (!loadedRef.current) return;
+    
+    // Save to localStorage
+    localStorage.setItem('sentinel_domains', JSON.stringify(domains));
+    
+    // Sync to Workers API
+    const syncDomainsToWorkers = async () => {
+      const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
+      if (!workersUrl) return;
+
+      try {
+        // Extract hostnames from domains
+        const hostnames = domains.map(d => d.hostname);
+        
+        const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domains: hostnames }),
+        });
+
+        if (response.ok) {
+          console.log('Domains synced to Workers API');
+        }
+      } catch (error) {
+        console.error('Failed to sync domains to Workers:', error);
+      }
+    };
+
+    syncDomainsToWorkers();
   }, [domains]);
 
   useEffect(() => {
