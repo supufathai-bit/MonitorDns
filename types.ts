@@ -1,8 +1,8 @@
 export enum ISP {
   GLOBAL = 'Global (Google)',
   AIS = 'AIS',
-  TRUE = 'True',
-  DTAC = 'DTAC',
+  TRUE = 'True/DTAC',  // True and DTAC use the same network (True Corporation)
+  DTAC = 'True/DTAC',  // Map DTAC to True/DTAC (same network)
   NT = 'NT',
 }
 

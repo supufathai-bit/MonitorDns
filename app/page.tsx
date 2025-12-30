@@ -205,15 +205,16 @@ export default function Home() {
                         console.log(`✅ [loadResultsFromWorkers] Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
 
                         // Map ISP names and group by mapped ISP, then use latest result for each ISP
+                        // Note: True and DTAC use the same network (True Corporation), so they map to the same ISP
                         const ispMap: Record<string, ISP> = {
                             'Unknown': ISP.AIS,
                             'unknown': ISP.AIS,
                             'AIS': ISP.AIS,
-                            'True': ISP.TRUE,
+                            'True': ISP.TRUE,      // True maps to True/DTAC
                             'TRUE': ISP.TRUE,
                             'true': ISP.TRUE,
-                            'DTAC': ISP.DTAC,
-                            'dtac': ISP.DTAC,
+                            'DTAC': ISP.TRUE,      // DTAC maps to True/DTAC (same network)
+                            'dtac': ISP.TRUE,
                             'NT': ISP.NT,
                             'nt': ISP.NT,
                             'Global (Google)': ISP.GLOBAL,
@@ -684,15 +685,16 @@ export default function Home() {
                                     console.log(`✅ Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
 
                                     // Map ISP names and group by mapped ISP, then use latest result for each ISP
+                                    // Note: True and DTAC use the same network (True Corporation), so they map to the same ISP
                                     const ispMap: Record<string, ISP> = {
                                         'Unknown': ISP.AIS,
                                         'unknown': ISP.AIS,
                                         'AIS': ISP.AIS,
-                                        'True': ISP.TRUE,
+                                        'True': ISP.TRUE,      // True maps to True/DTAC
                                         'TRUE': ISP.TRUE,
                                         'true': ISP.TRUE,
-                                        'DTAC': ISP.DTAC,
-                                        'dtac': ISP.DTAC,
+                                        'DTAC': ISP.TRUE,      // DTAC maps to True/DTAC (same network)
+                                        'dtac': ISP.TRUE,
                                         'NT': ISP.NT,
                                         'nt': ISP.NT,
                                         'Global (Google)': ISP.GLOBAL,
@@ -742,15 +744,16 @@ export default function Home() {
                                         const isp = ispKey as ISP;
                                         if (updatedResults[isp].status === Status.PENDING) {
                                             // Check if any result maps to this ISP
+                                            // Note: True and DTAC use the same network (True Corporation), so they map to the same ISP
                                             const ispMap: Record<string, ISP> = {
                                                 'Unknown': ISP.AIS,
                                                 'unknown': ISP.AIS,
                                                 'AIS': ISP.AIS,
-                                                'True': ISP.TRUE,
+                                                'True': ISP.TRUE,      // True maps to True/DTAC
                                                 'TRUE': ISP.TRUE,
                                                 'true': ISP.TRUE,
-                                                'DTAC': ISP.DTAC,
-                                                'dtac': ISP.DTAC,
+                                                'DTAC': ISP.TRUE,      // DTAC maps to True/DTAC (same network)
+                                                'dtac': ISP.TRUE,
                                                 'NT': ISP.NT,
                                                 'nt': ISP.NT,
                                                 'Global (Google)': ISP.GLOBAL,
