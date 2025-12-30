@@ -160,12 +160,19 @@ export default function Home() {
 
   // Sync domains to Workers when component mounts and when domains change
   useEffect(() => {
-    if (!loadedRef.current) return;
-    if (domains.length === 0) return;
+    if (!loadedRef.current) {
+      console.log('Not loaded yet, skipping domains sync');
+      return;
+    }
+    if (domains.length === 0) {
+      console.log('No domains to sync');
+      return;
+    }
 
     const syncDomainsToWorkers = async () => {
       const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
       if (!workersUrl) {
+        addLog('Workers URL not configured. Please set Workers URL in Settings to sync domains.', 'error');
         console.log('Workers URL not configured, skipping domains sync');
         return;
       }
@@ -176,6 +183,7 @@ export default function Home() {
         
         addLog(`Syncing ${hostnames.length} domains to Workers API...`, 'info');
         console.log('Syncing domains to Workers:', hostnames);
+        console.log('Workers URL:', workersUrl);
         
         // Sync to Workers API
         const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
@@ -196,6 +204,8 @@ export default function Home() {
             console.log('Verified domains in Workers:', verifyData.domains);
             if (verifyData.domains.length !== hostnames.length) {
               addLog(`Warning: Domains count mismatch. Expected ${hostnames.length}, got ${verifyData.domains.length}`, 'error');
+            } else {
+              addLog(`Verified: Workers API has ${verifyData.domains.length} domains`, 'success');
             }
           }
         } else {
@@ -212,7 +222,7 @@ export default function Home() {
     // Sync when domains change (debounce to avoid too many requests)
     const timeoutId = setTimeout(syncDomainsToWorkers, 1000);
     return () => clearTimeout(timeoutId);
-  }, [domains, loadedRef.current, addLog]);
+  }, [domains.length, domains.map(d => d.hostname).join(','), addLog]);
 
   // Save Data on Change
   useEffect(() => {
