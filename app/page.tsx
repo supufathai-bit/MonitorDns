@@ -237,7 +237,7 @@ export default function Home() {
             // Check if KV limit is exceeded - skip sync if so
             if (kvLimitExceededRef.current) {
                 console.log('⏸️ Skipping domain sync - KV limit exceeded');
-                addLog('⏸️ Domain sync skipped (KV limit exceeded)', 'warning');
+                addLog('⏸️ Domain sync skipped (KV limit exceeded)', 'info');
                 return;
             }
 
