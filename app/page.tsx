@@ -64,34 +64,92 @@ export default function Home() {
         }, ...prev].slice(0, 50));
     }, []);
 
-    // Load Data on Mount
+    // Load Data on Mount - Try Workers API first, fallback to localStorage
     useEffect(() => {
         if (typeof window !== 'undefined' && !loadedRef.current) {
-            try {
-                const savedDomains = localStorage.getItem('sentinel_domains');
-                const savedSettings = localStorage.getItem('sentinel_settings');
+            const loadData = async () => {
+                try {
+                    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                    
+                    if (workersUrl) {
+                        // Try to load from Workers API (shared storage)
+                        try {
+                            const [domainsRes, settingsRes] = await Promise.all([
+                                fetch(`${workersUrl}/api/frontend/domains`),
+                                fetch(`${workersUrl}/api/frontend/settings`)
+                            ]);
 
-                if (savedDomains) {
-                    setDomains(JSON.parse(savedDomains));
-                } else {
-                    const initialDomains = DEFAULT_DOMAINS.map(url => ({
-                        id: generateId(),
-                        url,
-                        hostname: getHostname(url),
-                        lastCheck: null,
-                        results: createEmptyResults(),
-                        isMonitoring: true
-                    }));
-                    setDomains(initialDomains);
-                }
+                            if (domainsRes.ok) {
+                                const domainsData = await domainsRes.json();
+                                if (domainsData.success && domainsData.domains && domainsData.domains.length > 0) {
+                                    setDomains(domainsData.domains);
+                                    addLog(`Loaded ${domainsData.domains.length} domains from Workers`, 'success');
+                                } else {
+                                    // No domains in Workers, use defaults
+                                    const initialDomains = DEFAULT_DOMAINS.map(url => ({
+                                        id: generateId(),
+                                        url,
+                                        hostname: getHostname(url),
+                                        lastCheck: null,
+                                        results: createEmptyResults(),
+                                        isMonitoring: true
+                                    }));
+                                    setDomains(initialDomains);
+                                }
+                            }
 
-                if (savedSettings) {
-                    setSettings(JSON.parse(savedSettings));
+                            if (settingsRes.ok) {
+                                const settingsData = await settingsRes.json();
+                                if (settingsData.success && settingsData.settings) {
+                                    setSettings(settingsData.settings);
+                                    addLog('Loaded settings from Workers', 'success');
+                                }
+                            }
+                        } catch (apiError) {
+                            console.error('Failed to load from Workers API, using localStorage:', apiError);
+                            // Fallback to localStorage
+                            loadFromLocalStorage();
+                        }
+                    } else {
+                        // No Workers URL, use localStorage
+                        loadFromLocalStorage();
+                    }
+                } catch (e) {
+                    console.error("Error loading data:", e);
+                    loadFromLocalStorage();
+                } finally {
+                    loadedRef.current = true;
                 }
-                loadedRef.current = true;
-            } catch (e) {
-                console.error("Error loading settings:", e);
-            }
+            };
+
+            const loadFromLocalStorage = () => {
+                try {
+                    const savedDomains = localStorage.getItem('sentinel_domains');
+                    const savedSettings = localStorage.getItem('sentinel_settings');
+
+                    if (savedDomains) {
+                        setDomains(JSON.parse(savedDomains));
+                    } else {
+                        const initialDomains = DEFAULT_DOMAINS.map(url => ({
+                            id: generateId(),
+                            url,
+                            hostname: getHostname(url),
+                            lastCheck: null,
+                            results: createEmptyResults(),
+                            isMonitoring: true
+                        }));
+                        setDomains(initialDomains);
+                    }
+
+                    if (savedSettings) {
+                        setSettings(JSON.parse(savedSettings));
+                    }
+                } catch (e) {
+                    console.error("Error loading from localStorage:", e);
+                }
+            };
+
+            loadData();
         }
     }, []);
 
@@ -207,15 +265,65 @@ export default function Home() {
         return () => clearTimeout(timeoutId);
     }, [loadedRef.current]);
 
-    // Save Data on Change
+    // Save Data on Change - Save to Workers API and localStorage
     useEffect(() => {
         if (loadedRef.current) {
+            // Save to localStorage (backup)
             localStorage.setItem('sentinel_domains', JSON.stringify(domains));
+            
+            // Save to Workers API (shared storage)
+            const saveToWorkers = async () => {
+                const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                if (workersUrl) {
+                    try {
+                        const response = await fetch(`${workersUrl}/api/frontend/domains`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ domains })
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.saved) {
+                                console.log('Domains saved to Workers:', domains.length);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Failed to save domains to Workers:', error);
+                    }
+                }
+            };
+            saveToWorkers();
         }
     }, [domains]);
 
     useEffect(() => {
-        if (loadedRef.current) localStorage.setItem('sentinel_settings', JSON.stringify(settings));
+        if (loadedRef.current) {
+            // Save to localStorage (backup)
+            localStorage.setItem('sentinel_settings', JSON.stringify(settings));
+            
+            // Save to Workers API (shared storage)
+            const saveToWorkers = async () => {
+                const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                if (workersUrl) {
+                    try {
+                        const response = await fetch(`${workersUrl}/api/frontend/settings`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ settings })
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.saved) {
+                                console.log('Settings saved to Workers');
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Failed to save settings to Workers:', error);
+                    }
+                }
+            };
+            saveToWorkers();
+        }
     }, [settings]);
 
     // Helper function to sync domains to Workers
@@ -833,8 +941,8 @@ export default function Home() {
                                                     }
                                                 }}
                                                 className={`px-2 py-1 rounded text-xs font-medium transition-colors ${settings.checkInterval > 0
-                                                        ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/50'
-                                                        : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600'
+                                                    ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/50'
+                                                    : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600'
                                                     }`}
                                                 title={settings.checkInterval > 0 ? 'Click to pause auto-scan' : 'Click to resume auto-scan'}
                                             >

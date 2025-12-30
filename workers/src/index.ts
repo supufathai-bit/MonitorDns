@@ -82,6 +82,23 @@ export default {
             return handleDNSCheck(request, env, corsHeaders);
         }
 
+        // Frontend data sync endpoints
+        if (url.pathname === '/api/frontend/domains' && request.method === 'GET') {
+            return handleGetFrontendDomains(request, env, corsHeaders);
+        }
+
+        if (url.pathname === '/api/frontend/domains' && request.method === 'POST') {
+            return handleSaveFrontendDomains(request, env, corsHeaders);
+        }
+
+        if (url.pathname === '/api/frontend/settings' && request.method === 'GET') {
+            return handleGetFrontendSettings(request, env, corsHeaders);
+        }
+
+        if (url.pathname === '/api/frontend/settings' && request.method === 'POST') {
+            return handleSaveFrontendSettings(request, env, corsHeaders);
+        }
+
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
@@ -606,6 +623,202 @@ async function handleDNSCheck(
 
     } catch (error: any) {
         console.error('DNS check error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Frontend Domains API - Get domains from KV
+async function handleGetFrontendDomains(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const domainsKey = 'frontend:domains';
+        const storedDomains = await env.SENTINEL_DATA.get(domainsKey);
+
+        if (storedDomains) {
+            return jsonResponse({
+                success: true,
+                domains: JSON.parse(storedDomains),
+            }, 200, corsHeaders);
+        }
+
+        // Return empty array if no domains stored
+        return jsonResponse({
+            success: true,
+            domains: [],
+        }, 200, corsHeaders);
+
+    } catch (error: any) {
+        console.error('Get frontend domains error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Frontend Domains API - Save domains to KV
+async function handleSaveFrontendDomains(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const body = await request.json();
+        const { domains } = body;
+
+        if (!domains || !Array.isArray(domains)) {
+            return jsonResponse(
+                { error: 'Invalid request. domains array required' },
+                400,
+                corsHeaders
+            );
+        }
+
+        // Check if data changed to avoid unnecessary KV writes
+        const domainsKey = 'frontend:domains';
+        const existingDomains = await env.SENTINEL_DATA.get(domainsKey);
+        const existingData = existingDomains ? JSON.parse(existingDomains) : [];
+        
+        // Compare domains (simple check)
+        const domainsChanged = JSON.stringify(existingData) !== JSON.stringify(domains);
+        
+        if (!domainsChanged) {
+            return jsonResponse({
+                success: true,
+                message: 'Domains unchanged, no update needed',
+                saved: false,
+            }, 200, corsHeaders);
+        }
+
+        // Save to KV
+        await env.SENTINEL_DATA.put(domainsKey, JSON.stringify(domains));
+
+        return jsonResponse({
+            success: true,
+            message: `Saved ${domains.length} domains`,
+            saved: true,
+        }, 200, corsHeaders);
+
+    } catch (error: any) {
+        // Check for KV limit error
+        if (error.message && error.message.includes('limit exceeded')) {
+            return jsonResponse({
+                success: false,
+                error: 'KV write limit exceeded for today. Please try again tomorrow.',
+                message: 'Daily KV write limit reached',
+            }, 429, corsHeaders);
+        }
+
+        console.error('Save frontend domains error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Frontend Settings API - Get settings from KV
+async function handleGetFrontendSettings(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const settingsKey = 'frontend:settings';
+        const storedSettings = await env.SENTINEL_DATA.get(settingsKey);
+
+        if (storedSettings) {
+            return jsonResponse({
+                success: true,
+                settings: JSON.parse(storedSettings),
+            }, 200, corsHeaders);
+        }
+
+        // Return default settings if none stored
+        return jsonResponse({
+            success: true,
+            settings: {
+                telegramBotToken: '',
+                telegramChatId: '',
+                checkInterval: 360,
+                backendUrl: '',
+                workersUrl: '',
+            },
+        }, 200, corsHeaders);
+
+    } catch (error: any) {
+        console.error('Get frontend settings error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Frontend Settings API - Save settings to KV
+async function handleSaveFrontendSettings(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const body = await request.json();
+        const { settings } = body;
+
+        if (!settings || typeof settings !== 'object') {
+            return jsonResponse(
+                { error: 'Invalid request. settings object required' },
+                400,
+                corsHeaders
+            );
+        }
+
+        // Check if data changed to avoid unnecessary KV writes
+        const settingsKey = 'frontend:settings';
+        const existingSettings = await env.SENTINEL_DATA.get(settingsKey);
+        const existingData = existingSettings ? JSON.parse(existingSettings) : {};
+        
+        // Compare settings (simple check)
+        const settingsChanged = JSON.stringify(existingData) !== JSON.stringify(settings);
+        
+        if (!settingsChanged) {
+            return jsonResponse({
+                success: true,
+                message: 'Settings unchanged, no update needed',
+                saved: false,
+            }, 200, corsHeaders);
+        }
+
+        // Save to KV
+        await env.SENTINEL_DATA.put(settingsKey, JSON.stringify(settings));
+
+        return jsonResponse({
+            success: true,
+            message: 'Settings saved',
+            saved: true,
+        }, 200, corsHeaders);
+
+    } catch (error: any) {
+        // Check for KV limit error
+        if (error.message && error.message.includes('limit exceeded')) {
+            return jsonResponse({
+                success: false,
+                error: 'KV write limit exceeded for today. Please try again tomorrow.',
+                message: 'Daily KV write limit reached',
+            }, 429, corsHeaders);
+        }
+
+        console.error('Save frontend settings error:', error);
         return jsonResponse(
             { error: error.message || 'Internal server error' },
             500,
