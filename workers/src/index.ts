@@ -57,16 +57,21 @@ export default {
             return handleGetDomains(request, env, corsHeaders);
         }
 
-        if (url.pathname === '/api/results' && request.method === 'GET') {
-            return handleGetResults(request, env, corsHeaders);
-        }
+    if (url.pathname === '/api/results' && request.method === 'GET') {
+      return handleGetResults(request, env, corsHeaders);
+    }
 
-        // DNS Check API - Uses DoH for Global, cached results for ISP-specific
-        if (url.pathname === '/api/check' && request.method === 'POST') {
-            return handleDNSCheck(request, env, corsHeaders);
-        }
+    // Update domains list (for frontend to sync)
+    if (url.pathname === '/api/mobile-sync/domains' && request.method === 'POST') {
+      return handleUpdateDomains(request, env, corsHeaders);
+    }
 
-        return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
+    // DNS Check API - Uses DoH for Global, cached results for ISP-specific
+    if (url.pathname === '/api/check' && request.method === 'POST') {
+      return handleDNSCheck(request, env, corsHeaders);
+    }
+
+    return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
 
@@ -164,15 +169,15 @@ async function handleGetDomains(
         let domains: string[];
         if (storedDomains) {
             domains = JSON.parse(storedDomains);
-    } else {
-      // Default domains
-      domains = [
-        'ufathai.win',
-        'ufathai.com',
-        'www.zec777.com',
-        'google.com',
-      ];
-    }
+        } else {
+            // Default domains (fallback only)
+            domains = [
+                'ufathai.win',
+                'ufathai.com',
+                'www.zec777.com',
+                'google.com',
+            ];
+        }
 
         return jsonResponse({
             success: true,
@@ -183,6 +188,59 @@ async function handleGetDomains(
 
     } catch (error: any) {
         console.error('Get domains error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Update domains list (for frontend to sync)
+async function handleUpdateDomains(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const body = await request.json();
+        const { domains } = body;
+
+        if (!domains || !Array.isArray(domains)) {
+            return jsonResponse(
+                { error: 'Invalid request. domains array required' },
+                400,
+                corsHeaders
+            );
+        }
+
+        // Extract hostnames from URLs if needed
+        const hostnames = domains.map(domain => {
+            // If it's a URL, extract hostname
+            if (domain.startsWith('http://') || domain.startsWith('https://')) {
+                try {
+                    const url = new URL(domain);
+                    return url.hostname;
+                } catch {
+                    return domain;
+                }
+            }
+            // If it's already a hostname, use as is
+            return domain;
+        });
+
+        // Store in KV
+        const domainsKey = 'domains:list';
+        await env.SENTINEL_DATA.put(domainsKey, JSON.stringify(hostnames));
+
+        return jsonResponse({
+            success: true,
+            message: `Updated ${hostnames.length} domains`,
+            domains: hostnames,
+        }, 200, corsHeaders);
+
+    } catch (error: any) {
+        console.error('Update domains error:', error);
         return jsonResponse(
             { error: error.message || 'Internal server error' },
             500,
