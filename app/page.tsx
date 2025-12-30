@@ -424,23 +424,34 @@ export default function Home() {
                             if (latestResult >= triggerTimestamp) {
                                 addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
 
-                                // Group results by hostname
+                                // Group results by hostname (normalize for matching)
+                                const normalizeHostname = (hostname: string): string => {
+                                    // Remove www. prefix and convert to lowercase for comparison
+                                    return hostname.toLowerCase().replace(/^www\./, '');
+                                };
+
                                 const resultsByHostname = new Map<string, typeof response.results>();
                                 response.results.forEach(result => {
-                                    if (!resultsByHostname.has(result.hostname)) {
-                                        resultsByHostname.set(result.hostname, []);
+                                    const normalized = normalizeHostname(result.hostname);
+                                    if (!resultsByHostname.has(normalized)) {
+                                        resultsByHostname.set(normalized, []);
                                     }
-                                    resultsByHostname.get(result.hostname)!.push(result);
+                                    resultsByHostname.get(normalized)!.push(result);
                                 });
 
-                                console.log('📊 Results by hostname:', Array.from(resultsByHostname.entries()).map(([h, r]) => [h, r.length]));
-                                console.log('📊 Current domains:', domainsRef.current.map(d => d.hostname));
+                                console.log('📊 Results by hostname (normalized):', Array.from(resultsByHostname.entries()).map(([h, r]) => [h, r.length]));
+                                console.log('📊 All result hostnames:', response.results.map(r => r.hostname));
+                                console.log('📊 Current domains:', domainsRef.current.map(d => `${d.hostname} (normalized: ${normalizeHostname(d.hostname)})`));
 
                                 // Update domains with results
                                 setDomains(prev => prev.map(domain => {
-                                    const hostnameResults = resultsByHostname.get(domain.hostname);
+                                    const normalizedDomainHostname = normalizeHostname(domain.hostname);
+                                    const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
+                                    
                                     if (!hostnameResults || hostnameResults.length === 0) {
-                                        console.log(`⚠️ No results for ${domain.hostname}`);
+                                        console.log(`⚠️ No results for ${domain.hostname} (normalized: ${normalizedDomainHostname})`);
+                                        console.log(`   Available normalized hostnames:`, Array.from(resultsByHostname.keys()));
+                                        
                                         // If no results, change PENDING to ERROR to stop loading spinner
                                         const updatedResults = { ...domain.results };
                                         Object.keys(updatedResults).forEach(ispKey => {
