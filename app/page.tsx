@@ -282,9 +282,16 @@ export default function Home() {
   // Helper function to sync domains to Workers
   const syncDomainsToWorkers = useCallback(async (domainsToSync: Domain[]) => {
     const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
+    
+    console.log('=== SYNC DOMAINS DEBUG ===');
+    console.log('NEXT_PUBLIC_WORKERS_URL:', process.env.NEXT_PUBLIC_WORKERS_URL);
+    console.log('settingsRef.current.backendUrl:', settingsRef.current.backendUrl);
+    console.log('Final workersUrl:', workersUrl);
+    console.log('Domains to sync:', domainsToSync.map(d => d.hostname));
+    
     if (!workersUrl) {
       addLog('Workers URL not configured. Please set Workers URL in Settings to sync domains.', 'error');
-      console.log('Workers URL not configured, skipping domains sync');
+      console.error('❌ Workers URL not configured, skipping domains sync');
       return;
     }
 
@@ -293,8 +300,9 @@ export default function Home() {
       const hostnames = domainsToSync.map(d => d.hostname);
       
       addLog(`Syncing ${hostnames.length} domains to Workers API...`, 'info');
-      console.log('Syncing domains to Workers:', hostnames);
-      console.log('Workers URL:', workersUrl);
+      console.log('📤 Syncing domains to Workers:', hostnames);
+      console.log('📤 Workers URL:', workersUrl);
+      console.log('📤 Request body:', JSON.stringify({ domains: hostnames }));
       
       // Sync to Workers API
       const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
@@ -303,31 +311,40 @@ export default function Home() {
         body: JSON.stringify({ domains: hostnames }),
       });
 
+      console.log('📥 Response status:', response.status);
+      console.log('📥 Response ok:', response.ok);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('✅ Response data:', data);
         addLog(`Successfully synced ${data.domains?.length || hostnames.length} domains to Workers API`, 'success');
-        console.log('Domains synced to Workers:', data.domains || hostnames);
+        console.log('✅ Domains synced to Workers:', data.domains || hostnames);
         
         // Verify sync by fetching domains back
         const verifyResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`);
         if (verifyResponse.ok) {
           const verifyData = await verifyResponse.json();
-          console.log('Verified domains in Workers:', verifyData.domains);
+          console.log('✅ Verified domains in Workers:', verifyData.domains);
           if (verifyData.domains.length !== hostnames.length) {
             addLog(`Warning: Domains count mismatch. Expected ${hostnames.length}, got ${verifyData.domains.length}`, 'error');
+            console.error('❌ Mismatch! Expected:', hostnames, 'Got:', verifyData.domains);
           } else {
             addLog(`Verified: Workers API has ${verifyData.domains.length} domains`, 'success');
+            console.log('✅ Verified! Domains match:', verifyData.domains);
           }
+        } else {
+          console.error('❌ Verify request failed:', verifyResponse.status);
         }
       } else {
         const errorText = await response.text();
         addLog(`Failed to sync domains: ${response.status}`, 'error');
-        console.error('Failed to sync domains:', errorText);
+        console.error('❌ Failed to sync domains:', response.status, errorText);
       }
     } catch (error) {
       addLog('Failed to sync domains to Workers API', 'error');
-      console.error('Failed to sync domains:', error);
+      console.error('❌ Exception during sync:', error);
     }
+    console.log('=== END SYNC DEBUG ===');
   }, [addLog]);
 
   const handleAddDomain = async (e: React.FormEvent) => {
