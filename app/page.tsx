@@ -434,7 +434,7 @@ export default function Home() {
                                 });
 
                                 console.log('📊 Results by hostname:', Array.from(resultsByHostname.entries()).map(([h, r]) => [h, r.length]));
-                                console.log('📊 Current domains:', prev.map(d => d.hostname));
+                                console.log('📊 Current domains:', domainsRef.current.map(d => d.hostname));
 
                                 // Update domains with results
                                 setDomains(prev => prev.map(domain => {
