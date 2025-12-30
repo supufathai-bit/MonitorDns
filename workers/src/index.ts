@@ -307,17 +307,18 @@ async function handleMobileSync(
             // Check if it's a KV limit error
             const errorMessage = kvError.message || String(kvError);
             if (errorMessage.includes('limit exceeded') || errorMessage.includes('limit reached')) {
-                console.error('KV limit exceeded:', kvError);
+                console.error('KV limit exceeded (but D1 save succeeded):', kvError);
+                // Since D1 save succeeded, return success even if KV limit exceeded
+                // KV is only used for backward compatibility and faster reads
                 return jsonResponse({
-                    success: false,
-                    error: 'KV write limit exceeded for today. Please try again tomorrow or upgrade your Cloudflare plan.',
-                    message: 'Daily KV write limit reached',
+                    success: true,
+                    message: `Received ${results.length} results from device ${device_id} (saved to D1, KV limit reached)`,
+                    processed: results.length,
+                    timestamp,
+                    warning: 'KV write limit reached, but results saved to D1 successfully',
                     kvLimitExceeded: true,
-                    // Still return partial success if some results were saved
-                    partialSuccess: kvWriteCount > 0,
-                    savedCount: kvWriteCount,
-                    totalCount: results.length,
-                }, 429, corsHeaders); // 429 Too Many Requests
+                    savedToD1: true,
+                }, 200, corsHeaders); // Return 200 OK since D1 save succeeded
             }
             throw kvError; // Re-throw other errors
         }
@@ -373,25 +374,38 @@ async function handleGetDomains(
     corsHeaders: Record<string, string>
 ): Promise<Response> {
     try {
-        // Use domains:list as primary source (same key that frontend syncs to)
-        const domainsKey = 'domains:list';
-        const storedDomains = await env.SENTINEL_DATA.get(domainsKey);
-
+        // Try D1 first (primary storage - same as frontend)
         let domains: string[] = [];
-        if (storedDomains) {
-            try {
-                const parsed = JSON.parse(storedDomains);
-                if (Array.isArray(parsed)) {
-                    // Normalize hostnames (remove www, lowercase)
-                    domains = parsed.map((d: any) => {
-                        const str = typeof d === 'string' ? d : (d.hostname || d.url || String(d));
-                        return str.replace(/^www\./i, '').toLowerCase();
-                    });
-                    // Remove duplicates and sort
-                    domains = [...new Set(domains)].sort();
+        try {
+            domains = await getDomainsFromD1(env);
+            if (domains.length > 0) {
+                console.log(`Mobile app: Got ${domains.length} domains from D1`);
+            }
+        } catch (d1Error) {
+            console.warn('D1 getDomains error, falling back to KV:', d1Error);
+        }
+
+        // Fallback to KV if D1 is empty or failed
+        if (domains.length === 0) {
+            const domainsKey = 'domains:list';
+            const storedDomains = await env.SENTINEL_DATA.get(domainsKey);
+
+            if (storedDomains) {
+                try {
+                    const parsed = JSON.parse(storedDomains);
+                    if (Array.isArray(parsed)) {
+                        // Normalize hostnames (remove www, lowercase)
+                        domains = parsed.map((d: any) => {
+                            const str = typeof d === 'string' ? d : (d.hostname || d.url || String(d));
+                            return str.replace(/^www\./i, '').toLowerCase();
+                        });
+                        // Remove duplicates and sort
+                        domains = [...new Set(domains)].sort();
+                        console.log(`Mobile app: Got ${domains.length} domains from KV (fallback)`);
+                    }
+                } catch (e) {
+                    console.error('Error parsing domains from KV:', e);
                 }
-            } catch (e) {
-                console.error('Error parsing domains:', e);
             }
         }
 
@@ -403,6 +417,7 @@ async function handleGetDomains(
                 'www.zec777.com',
                 'google.com',
             ];
+            console.log('Mobile app: Using default domains');
         }
 
         console.log(`Mobile app domains: ${domains.length} domains from ${domainsKey}`);
