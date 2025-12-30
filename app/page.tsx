@@ -376,10 +376,27 @@ export default function Home() {
     const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.backendUrl;
     
     if (workersUrl) {
-      // Use mobile app results from Workers API
+      // Trigger mobile app to check DNS
       try {
-        addLog('Fetching results from mobile app...', 'info');
-        const response = await fetchResultsFromWorkers(workersUrl);
+        addLog('Requesting mobile app to check DNS...', 'info');
+        const triggerResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/trigger-check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (triggerResponse.ok) {
+          const triggerData = await triggerResponse.json();
+          addLog('Mobile app check triggered. Waiting for results...', 'info');
+          
+          // Poll for results (check every 2 seconds, max 30 seconds)
+          let attempts = 0;
+          const maxAttempts = 15; // 30 seconds total
+          
+          const pollForResults = async (): Promise<void> => {
+            attempts++;
+            
+            try {
+              const response = await fetchResultsFromWorkers(workersUrl);
         
         if (response.success && response.results.length > 0) {
           addLog(`Loaded ${response.results.length} results from mobile app`, 'success');

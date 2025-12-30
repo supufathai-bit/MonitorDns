@@ -259,6 +259,76 @@ async function handleUpdateDomains(
     }
 }
 
+// Trigger mobile app to check DNS (for frontend)
+async function handleTriggerCheck(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        // Set trigger flag in KV (expires in 5 minutes)
+        const triggerKey = 'trigger:check';
+        const timestamp = Date.now();
+        
+        await env.SENTINEL_DATA.put(triggerKey, JSON.stringify({
+            triggered: true,
+            timestamp,
+            requested_by: 'frontend',
+        }), {
+            expirationTtl: 300, // 5 minutes
+        });
+
+        return jsonResponse({
+            success: true,
+            message: 'Check triggered. Mobile app will check DNS soon.',
+            timestamp,
+        }, 200, corsHeaders);
+
+    } catch (error: any) {
+        console.error('Trigger check error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Check if check is triggered (for mobile app to poll)
+async function handleGetTriggerCheck(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const triggerKey = 'trigger:check';
+        const triggerData = await env.SENTINEL_DATA.get(triggerKey);
+
+        if (triggerData) {
+            const data = JSON.parse(triggerData);
+            return jsonResponse({
+                success: true,
+                triggered: true,
+                timestamp: data.timestamp,
+                requested_by: data.requested_by,
+            }, 200, corsHeaders);
+        }
+
+        return jsonResponse({
+            success: true,
+            triggered: false,
+        }, 200, corsHeaders);
+
+    } catch (error: any) {
+        console.error('Get trigger check error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
 // Get results (for frontend)
 async function handleGetResults(
     request: Request,
