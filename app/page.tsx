@@ -52,6 +52,16 @@ export default function Home() {
   useEffect(() => { domainsRef.current = domains; }, [domains]);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
 
+  // Add log function (must be defined before useEffects that use it)
+  const addLog = useCallback((message: string, type: LogEntry['type']) => {
+    setLogs(prev => [{
+        id: generateId(),
+        timestamp: Date.now(),
+        message,
+        type
+    }, ...prev].slice(0, 50));
+  }, []);
+
   // Load Data on Mount
   useEffect(() => {
     if (typeof window !== 'undefined' && !loadedRef.current) {
