@@ -398,6 +398,7 @@ async function handleGetDomains(
         }
 
         // Fallback to KV if D1 is empty or failed
+        let source = 'D1';
         if (domains.length === 0) {
             const domainsKey = 'domains:list';
             const storedDomains = await env.SENTINEL_DATA.get(domainsKey);
@@ -414,6 +415,7 @@ async function handleGetDomains(
                         // Remove duplicates and sort
                         domains = [...new Set(domains)].sort();
                         console.log(`Mobile app: Got ${domains.length} domains from KV (fallback)`);
+                        source = 'KV';
                     }
                 } catch (e) {
                     console.error('Error parsing domains from KV:', e);
@@ -430,9 +432,10 @@ async function handleGetDomains(
                 'google.com',
             ];
             console.log('Mobile app: Using default domains');
+            source = 'defaults';
         }
 
-        console.log(`Mobile app domains: ${domains.length} domains from ${domainsKey}`);
+        console.log(`Mobile app domains: ${domains.length} domains from ${source}`);
 
         return jsonResponse({
             success: true,
