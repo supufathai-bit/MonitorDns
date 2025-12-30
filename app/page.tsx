@@ -27,15 +27,12 @@ const defaultSettings: AppSettings = {
 };
 
 const createEmptyResults = (): Record<ISP, ISPResult> => {
-    // Get unique ISP values (ISP.TRUE and ISP.DTAC have same value 'True/DTAC')
-    const uniqueISPs = Array.from(new Set(Object.values(ISP)));
+    // Create separate slots for all ISPs (TRUE and DTAC are separate for UI clarity)
+    const keys = Object.values(ISP);
     const results: any = {};
-    uniqueISPs.forEach(k => {
+    keys.forEach(k => {
         results[k] = { isp: k, status: Status.PENDING };
     });
-    // Ensure both ISP.TRUE and ISP.DTAC point to the same slot (they have same value 'True/DTAC')
-    // This allows DTAC results to be displayed in the True/DTAC slot
-    results[ISP.DTAC] = results[ISP.TRUE];
     return results;
 };
 
@@ -272,22 +269,27 @@ export default function Home() {
                             const ispName = workerResult.isp_name;
                             console.log(`🔄 [loadResultsFromWorkers] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
                             
-                            if (updatedResults[isp]) {
-                                const existingResult = updatedResults[isp];
-                                console.log(`✅ [loadResultsFromWorkers] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
-                                updatedResults[isp] = {
-                                    isp: isp,
-                                    status: workerResult.status as Status,
-                                    ip: workerResult.ip || '',
-                                    latency: workerResult.latency || 0,
-                                    details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
-                                    source: 'mobile-app',
-                                    deviceId: workerResult.device_id,
-                                    timestamp: workerResult.timestamp,
-                                };
-                            } else {
-                                console.warn(`⚠️ [loadResultsFromWorkers] No result slot for ISP: ${isp} (mapped from ${ispName})`);
-                            }
+                            // If result is for True/DTAC, update both TRUE and DTAC slots (they share the same network)
+                            const targetISPs = (isp === ISP.TRUE) ? [ISP.TRUE, ISP.DTAC] : [isp];
+                            
+                            targetISPs.forEach(targetISP => {
+                                if (updatedResults[targetISP]) {
+                                    const existingResult = updatedResults[targetISP];
+                                    console.log(`✅ [loadResultsFromWorkers] Updating ${targetISP} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                    updatedResults[targetISP] = {
+                                        isp: targetISP,
+                                        status: workerResult.status as Status,
+                                        ip: workerResult.ip || '',
+                                        latency: workerResult.latency || 0,
+                                        details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                        source: 'mobile-app',
+                                        deviceId: workerResult.device_id,
+                                        timestamp: workerResult.timestamp,
+                                    };
+                                } else {
+                                    console.warn(`⚠️ [loadResultsFromWorkers] No result slot for ISP: ${targetISP} (mapped from ${ispName})`);
+                                }
+                            });
                         });
 
                         // Find latest timestamp
@@ -791,22 +793,27 @@ export default function Home() {
                                         const ispName = workerResult.isp_name;
                                         console.log(`🔄 [pollForResults] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
                                         
-                                        if (updatedResults[isp]) {
-                                            const existingResult = updatedResults[isp];
-                                            console.log(`✅ [pollForResults] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
-                                            updatedResults[isp] = {
-                                                isp: isp,
-                                                status: workerResult.status as Status,
-                                                ip: workerResult.ip || '',
-                                                latency: workerResult.latency || 0,
-                                                details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
-                                                source: 'mobile-app',
-                                                deviceId: workerResult.device_id,
-                                                timestamp: workerResult.timestamp,
-                                            };
-                                        } else {
-                                            console.warn(`⚠️ [pollForResults] No result slot for ISP: ${isp} (mapped from ${ispName})`);
-                                        }
+                                        // If result is for True/DTAC, update both TRUE and DTAC slots (they share the same network)
+                                        const targetISPs = (isp === ISP.TRUE) ? [ISP.TRUE, ISP.DTAC] : [isp];
+                                        
+                                        targetISPs.forEach(targetISP => {
+                                            if (updatedResults[targetISP]) {
+                                                const existingResult = updatedResults[targetISP];
+                                                console.log(`✅ [pollForResults] Updating ${targetISP} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                                updatedResults[targetISP] = {
+                                                    isp: targetISP,
+                                                    status: workerResult.status as Status,
+                                                    ip: workerResult.ip || '',
+                                                    latency: workerResult.latency || 0,
+                                                    details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                    source: 'mobile-app',
+                                                    deviceId: workerResult.device_id,
+                                                    timestamp: workerResult.timestamp,
+                                                };
+                                            } else {
+                                                console.warn(`⚠️ [pollForResults] No result slot for ISP: ${targetISP} (mapped from ${ispName})`);
+                                            }
+                                        });
                                     });
 
                                     // Change remaining PENDING to ERROR if no results for that ISP
