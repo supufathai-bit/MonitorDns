@@ -21,7 +21,7 @@ const generateId = () => {
 const defaultSettings: AppSettings = {
     telegramBotToken: '',
     telegramChatId: '',
-    checkInterval: 480, // Default to 8 hours (3 scans per day: 0:00, 8:00, 16:00)
+    checkInterval: 360, // Default to 6 hours (4 scans per day: 0:00, 6:00, 12:00, 18:00)
     backendUrl: ''
 };
 

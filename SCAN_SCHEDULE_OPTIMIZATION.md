@@ -1,14 +1,15 @@
-# Scan Schedule Optimization - 3 Scans per Day
+# Scan Schedule Optimization - 4 Scans per Day
 
 ## การตั้งค่า
 
 ### Default Settings
-- **Check Interval**: 8 ชั่วโมง (480 นาที)
-- **Scans per Day**: 3 ครั้ง
+- **Check Interval**: 6 ชั่วโมง (360 นาที)
+- **Scans per Day**: 4 ครั้ง
 - **Schedule**: 
   - 00:00 (เที่ยงคืน)
-  - 08:00 (เช้า)
-  - 16:00 (เย็น)
+  - 06:00 (เช้า)
+  - 12:00 (เที่ยง)
+  - 18:00 (เย็น)
 
 ### KV Writes Calculation
 
@@ -29,16 +30,16 @@ Total per scan: ~17 KV writes
 + Mobile app sync = 2-5 KV writes (เฉพาะเมื่อเปลี่ยน)
 
 Total per scan: ~3-7 KV writes
-3 scans/day = 9-21 KV writes/day ✅✅ (ปลอดภัยมาก!)
+4 scans/day = 12-28 KV writes/day ✅✅ (ปลอดภัยมาก!)
 ```
 
 ## เปรียบเทียบ Options
 
 | Interval | Scans/Day | KV Writes/Day | Status |
 |----------|-----------|---------------|--------|
-| **6 hours** | 4 | 12-28 | ✅ Safe |
-| **8 hours** | 3 | 9-21 | ✅✅ Recommended |
-| **12 hours** | 2 | 6-14 | ✅✅ Very Safe |
+| **6 hours** | 4 | 12-28 | ✅✅ Recommended (Default) |
+| **8 hours** | 3 | 9-21 | ✅✅ Very Safe |
+| **12 hours** | 2 | 6-14 | ✅✅✅ Ultra Safe |
 | **24 hours** | 1 | 3-7 | ✅✅✅ Ultra Safe |
 
 ## วิธีตั้งค่า
@@ -47,20 +48,20 @@ Total per scan: ~3-7 KV writes
 1. เปิดหน้าเว็บ → Settings
 2. ดู **Check Interval (Min)**
 3. ตั้งค่าเป็น:
-   - **480 นาที** (8 ชั่วโมง) = 3 ครั้ง/วัน ✅
-   - **360 นาที** (6 ชั่วโมง) = 4 ครั้ง/วัน
+   - **360 นาที** (6 ชั่วโมง) = 4 ครั้ง/วัน ✅ (Default)
+   - **480 นาที** (8 ชั่วโมง) = 3 ครั้ง/วัน
    - **720 นาที** (12 ชั่วโมง) = 2 ครั้ง/วัน
 4. กด **Save**
 
 ### Option 2: ใช้ Quick Buttons
-- กด **"8 Hours (3x/day)"** = ตั้งเป็น 480 นาที
+- กด **"6 Hours (4x/day)"** = ตั้งเป็น 360 นาที (Default)
 - กด **"6 Hours"** = ตั้งเป็น 360 นาที
 
 ## Auto-Scan Schedule
 
 ระบบจะสแกนอัตโนมัติตาม interval ที่ตั้งไว้:
 - **ครั้งที่ 1**: เมื่อเปิดหน้าเว็บ (ถ้าเกิน interval)
-- **ครั้งถัดไป**: ทุก 8 ชั่วโมง (ตาม interval)
+- **ครั้งถัดไป**: ทุก 6 ชั่วโมง (ตาม interval)
 
 ## Manual Scan
 
@@ -71,8 +72,8 @@ Total per scan: ~3-7 KV writes
 ## KV Limit Safety
 
 ### Free Plan (1,000 writes/day):
+- **4 scans/day**: 12-28 writes ✅✅ (ใช้แค่ 1-3%) - Default
 - **3 scans/day**: 9-21 writes ✅✅ (ใช้แค่ 1-2%)
-- **4 scans/day**: 12-28 writes ✅ (ใช้แค่ 1-3%)
 - **6 scans/day**: 18-42 writes ✅ (ใช้แค่ 2-4%)
 
 ### Margin of Safety:

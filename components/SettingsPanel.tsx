@@ -28,7 +28,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
   const setDailyInterval = () => {
     setFormData(prev => ({
         ...prev,
-        checkInterval: 480 // 8 hours (3 scans per day)
+        checkInterval: 360 // 6 hours (4 scans per day)
     }));
   };
 
@@ -76,13 +76,22 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
             <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1 flex items-center justify-between">
                     <span className="flex items-center"><Clock className="w-4 h-4 mr-2" /> Check Interval (Min)</span>
-                    <button 
-                        type="button" 
-                        onClick={setDailyInterval}
-                        className="text-xs text-neon-blue hover:underline"
-                    >
-                        Set 24 Hours
-                    </button>
+                    <div className="flex gap-2">
+                        <button 
+                            type="button" 
+                            onClick={set6HourInterval}
+                            className="text-xs text-neon-blue hover:underline"
+                        >
+                            6 Hours
+                        </button>
+                        <button 
+                            type="button" 
+                            onClick={setDailyInterval}
+                            className="text-xs text-neon-blue hover:underline"
+                        >
+                            6 Hours (4x/day)
+                        </button>
+                    </div>
                 </label>
                 <div className="flex gap-2">
                     <input
