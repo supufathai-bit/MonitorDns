@@ -697,11 +697,23 @@ export default function Home() {
 
     // Periodic Interval
     useEffect(() => {
-        if (settings.checkInterval <= 0) return;
+        if (settings.checkInterval <= 0) {
+            setNextScanTime(null);
+            return;
+        }
+        
+        // Calculate next scan time
+        const now = Date.now();
+        const intervalMs = settings.checkInterval * 60 * 1000;
+        const nextScan = now + intervalMs;
+        setNextScanTime(nextScan);
+        
         const intervalId = setInterval(() => {
             addLog('Auto-scan interval reached', 'info');
             runAllChecks();
-        }, settings.checkInterval * 60 * 1000);
+            // Update next scan time after each scan
+            setNextScanTime(Date.now() + intervalMs);
+        }, intervalMs);
         return () => clearInterval(intervalId);
     }, [settings.checkInterval, runAllChecks, addLog]);
 
