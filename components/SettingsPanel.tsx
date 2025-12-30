@@ -10,8 +10,10 @@ interface SettingsPanelProps {
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }) => {
-  const [formData, setFormData] = React.useState<AppSettings>(settings);
-  const [workersUrl, setWorkersUrl] = useState(process.env.NEXT_PUBLIC_WORKERS_URL || '');
+  const [formData, setFormData] = React.useState<AppSettings>({
+    ...settings,
+    workersUrl: settings.workersUrl || process.env.NEXT_PUBLIC_WORKERS_URL || ''
+  });
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
 
