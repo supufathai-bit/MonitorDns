@@ -279,44 +279,8 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [loadedRef.current, addLog]);
 
-  const handleAddDomain = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUrl) return;
-    
-    const hostname = getHostname(newUrl);
-    const newDomain: Domain = {
-      id: generateId(),
-      url: newUrl,
-      hostname,
-      lastCheck: null,
-      results: createEmptyResults(),
-      isMonitoring: true,
-    };
-
-    const updatedDomains = [...domainsRef.current, newDomain];
-    setDomains(updatedDomains);
-    setNewUrl('');
-    addLog(`Added domain: ${hostname}`, 'info');
-    
-    // Sync immediately after adding
-    await syncDomainsToWorkers(updatedDomains);
-  };
-
-  const handleDeleteDomain = async (id: string) => {
-    const updatedDomains = domainsRef.current.filter(d => d.id !== id);
-    const deletedDomain = domainsRef.current.find(d => d.id === id);
-    setDomains(updatedDomains);
-    
-    if (deletedDomain) {
-      addLog(`Deleted domain: ${deletedDomain.hostname}`, 'info');
-    }
-    
-    // Sync immediately after deleting
-    await syncDomainsToWorkers(updatedDomains);
-  };
-  
   // Helper function to sync domains to Workers
-  const syncDomainsToWorkers = async (domainsToSync: Domain[]) => {
+  const syncDomainsToWorkers = useCallback(async (domainsToSync: Domain[]) => {
     const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
     if (!workersUrl) {
       addLog('Workers URL not configured. Please set Workers URL in Settings to sync domains.', 'error');
