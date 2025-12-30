@@ -164,14 +164,15 @@ async function handleGetDomains(
         let domains: string[];
         if (storedDomains) {
             domains = JSON.parse(storedDomains);
-        } else {
-            // Default domains
-            domains = [
-                'ufathai.win',
-                'ufathai.com',
-                'www.zec777.com',
-            ];
-        }
+    } else {
+      // Default domains
+      domains = [
+        'ufathai.win',
+        'ufathai.com',
+        'www.zec777.com',
+        'google.com',
+      ];
+    }
 
         return jsonResponse({
             success: true,
