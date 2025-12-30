@@ -135,13 +135,13 @@ async function handleMobileSync(
 
         // Store results in KV (optimized to reduce KV writes)
         const timestamp = Date.now();
+        let kvWriteCount = 0; // Track KV writes (declared outside try block for error handling)
+        const MAX_KV_WRITES = 50; // Limit writes per sync to avoid hitting daily limit
 
         try {
             // Store latest result per domain+ISP (only update if changed or expired)
             // Batch all writes together to reduce operations
             const writePromises: Promise<void>[] = [];
-            let kvWriteCount = 0;
-            const MAX_KV_WRITES = 50; // Limit writes per sync to avoid hitting daily limit
 
             for (const result of results) {
                 // Stop if we're approaching the limit
