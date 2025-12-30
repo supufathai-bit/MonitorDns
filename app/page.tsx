@@ -83,6 +83,81 @@ export default function Home() {
     }
   }, []);
 
+  // Load results from Workers immediately after data is loaded
+  useEffect(() => {
+    if (!loadedRef.current) return;
+
+    const loadResultsFromWorkers = async () => {
+      const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
+      
+      if (!workersUrl) {
+        console.log('Workers URL not configured, skipping results fetch');
+        return;
+      }
+
+      try {
+        addLog('Fetching results from Workers API...', 'info');
+        const response = await fetchResultsFromWorkers(workersUrl);
+        
+        if (response.success && response.results.length > 0) {
+          addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
+          
+          // Group results by hostname
+          const resultsByHostname = new Map<string, typeof response.results>();
+          response.results.forEach(result => {
+            if (!resultsByHostname.has(result.hostname)) {
+              resultsByHostname.set(result.hostname, []);
+            }
+            resultsByHostname.get(result.hostname)!.push(result);
+          });
+
+          // Update domains with results
+          setDomains(prev => prev.map(domain => {
+            const hostnameResults = resultsByHostname.get(domain.hostname);
+            if (!hostnameResults || hostnameResults.length === 0) {
+              return domain;
+            }
+
+            // Convert Workers results to ISPResult format
+            const updatedResults = { ...domain.results };
+            hostnameResults.forEach(workerResult => {
+              const isp = workerResult.isp_name as ISP;
+              if (updatedResults[isp]) {
+                updatedResults[isp] = {
+                  isp: isp,
+                  status: workerResult.status as Status,
+                  ip: workerResult.ip || '',
+                  latency: workerResult.latency || 0,
+                  details: `From mobile app (${new Date(workerResult.timestamp).toLocaleString()})`,
+                  source: 'mobile-app',
+                  deviceId: workerResult.device_id,
+                  timestamp: workerResult.timestamp,
+                };
+              }
+            });
+
+            // Find latest timestamp
+            const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
+
+            return {
+              ...domain,
+              results: updatedResults,
+              lastCheck: latestTimestamp,
+            };
+          }));
+        } else {
+          addLog('No results found from mobile app', 'info');
+        }
+      } catch (error) {
+        console.error('Error loading results from Workers:', error);
+        addLog('Failed to load results from Workers API', 'error');
+      }
+    };
+
+    // Load immediately when component mounts
+    loadResultsFromWorkers();
+  }, [loadedRef.current, addLog]);
+
   // Save Data on Change
   useEffect(() => {
     if (loadedRef.current) localStorage.setItem('sentinel_domains', JSON.stringify(domains));
