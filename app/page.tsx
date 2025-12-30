@@ -221,15 +221,44 @@ export default function Home() {
                             'Global': ISP.GLOBAL,
                         };
 
-                        // Group results by mapped ISP and get latest for each ISP
+                        // Group results by mapped ISP and get best result for each ISP
+                        // Priority: 1) ISP name clarity (AIS > Unknown), 2) Status (BLOCKED > ACTIVE if timestamps close), 3) Latest timestamp
                         const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
                         hostnameResults.forEach(workerResult => {
                             const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
                             const existing = resultsByMappedISP.get(mappedISP);
                             
-                            // Use result with latest timestamp
-                            if (!existing || (workerResult.timestamp || 0) > (existing.timestamp || 0)) {
+                            if (!existing) {
                                 resultsByMappedISP.set(mappedISP, workerResult);
+                            } else {
+                                const existingTimestamp = existing.timestamp || 0;
+                                const newTimestamp = workerResult.timestamp || 0;
+                                const timeDiff = Math.abs(newTimestamp - existingTimestamp);
+                                const isCloseTime = timeDiff < 60000; // Within 1 minute
+                                
+                                // Priority rules:
+                                // 1. If timestamps are close and one is BLOCKED, prefer BLOCKED (more accurate)
+                                if (isCloseTime) {
+                                    if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
+                                        resultsByMappedISP.set(mappedISP, workerResult);
+                                    } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
+                                        // Keep existing BLOCKED
+                                    } else {
+                                        // 2. Prefer ISP name clarity (AIS > Unknown)
+                                        const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
+                                        const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
+                                        if (!newIsUnknown && existingIsUnknown) {
+                                            resultsByMappedISP.set(mappedISP, workerResult);
+                                        } else if (newTimestamp > existingTimestamp) {
+                                            resultsByMappedISP.set(mappedISP, workerResult);
+                                        }
+                                    }
+                                } else {
+                                    // Timestamps are far apart, use latest
+                                    if (newTimestamp > existingTimestamp) {
+                                        resultsByMappedISP.set(mappedISP, workerResult);
+                                    }
+                                }
                             }
                         });
 
@@ -701,15 +730,44 @@ export default function Home() {
                                         'Global': ISP.GLOBAL,
                                     };
 
-                                    // Group results by mapped ISP and get latest for each ISP
+                                    // Group results by mapped ISP and get best result for each ISP
+                                    // Priority: 1) ISP name clarity (AIS > Unknown), 2) Status (BLOCKED > ACTIVE if timestamps close), 3) Latest timestamp
                                     const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
                                     hostnameResults.forEach(workerResult => {
                                         const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
                                         const existing = resultsByMappedISP.get(mappedISP);
                                         
-                                        // Use result with latest timestamp
-                                        if (!existing || (workerResult.timestamp || 0) > (existing.timestamp || 0)) {
+                                        if (!existing) {
                                             resultsByMappedISP.set(mappedISP, workerResult);
+                                        } else {
+                                            const existingTimestamp = existing.timestamp || 0;
+                                            const newTimestamp = workerResult.timestamp || 0;
+                                            const timeDiff = Math.abs(newTimestamp - existingTimestamp);
+                                            const isCloseTime = timeDiff < 60000; // Within 1 minute
+                                            
+                                            // Priority rules:
+                                            // 1. If timestamps are close and one is BLOCKED, prefer BLOCKED (more accurate)
+                                            if (isCloseTime) {
+                                                if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
+                                                    resultsByMappedISP.set(mappedISP, workerResult);
+                                                } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
+                                                    // Keep existing BLOCKED
+                                                } else {
+                                                    // 2. Prefer ISP name clarity (AIS > Unknown)
+                                                    const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
+                                                    const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
+                                                    if (!newIsUnknown && existingIsUnknown) {
+                                                        resultsByMappedISP.set(mappedISP, workerResult);
+                                                    } else if (newTimestamp > existingTimestamp) {
+                                                        resultsByMappedISP.set(mappedISP, workerResult);
+                                                    }
+                                                }
+                                            } else {
+                                                // Timestamps are far apart, use latest
+                                                if (newTimestamp > existingTimestamp) {
+                                                    resultsByMappedISP.set(mappedISP, workerResult);
+                                                }
+                                            }
                                         }
                                     });
 
