@@ -164,11 +164,21 @@ export default function Home() {
 
     const syncDomainsOnMount = async () => {
       const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.backendUrl;
-      if (!workersUrl) return;
+      if (!workersUrl) {
+        console.log('Workers URL not configured, skipping domains sync on mount');
+        return;
+      }
 
       try {
         // Extract hostnames from domains
         const hostnames = domains.map(d => d.hostname);
+        
+        if (hostnames.length === 0) {
+          console.log('No domains to sync');
+          return;
+        }
+        
+        addLog(`Syncing ${hostnames.length} domains to Workers API on mount...`, 'info');
         
         // Sync to Workers API
         const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
@@ -179,16 +189,22 @@ export default function Home() {
 
         if (response.ok) {
           const data = await response.json();
+          addLog(`Successfully synced ${data.domains?.length || hostnames.length} domains to Workers API`, 'success');
           console.log('Domains synced to Workers on mount:', data.domains || hostnames);
+        } else {
+          const errorText = await response.text();
+          addLog(`Failed to sync domains on mount: ${response.status}`, 'error');
+          console.error('Failed to sync domains on mount:', errorText);
         }
       } catch (error) {
+        addLog('Failed to sync domains to Workers API on mount', 'error');
         console.error('Failed to sync domains on mount:', error);
       }
     };
 
-    // Sync once on mount
-    syncDomainsOnMount();
-  }, [loadedRef.current]);
+    // Sync once on mount (wait a bit for domains to load)
+    setTimeout(syncDomainsOnMount, 500);
+  }, [loadedRef.current, domains.length]);
 
   // Save Data on Change and Sync to Workers
   useEffect(() => {
