@@ -84,6 +84,11 @@ export default {
             return handleDNSCheck(request, env, corsHeaders);
         }
 
+        // HTTP Content Check API - Check if domain shows blocked page
+        if (url.pathname === '/api/check-content' && request.method === 'POST') {
+            return handleHTTPContentCheck(request, env, corsHeaders);
+        }
+
         // Frontend data sync endpoints
         if (url.pathname === '/api/frontend/domains' && request.method === 'GET') {
             return handleGetFrontendDomains(request, env, corsHeaders);
@@ -154,12 +159,22 @@ async function handleMobileSync(
                         ispName = device_info?.isp || 'Unknown';
                     }
                     
+                    // Check if status should be BLOCKED based on HTTP content
+                    // If mobile app reports ACTIVE but we detect blocking page, mark as BLOCKED
+                    let finalStatus = result.status;
+                    
+                    // If status is ACTIVE and we have IP, check HTTP content for blocking page
+                    if (result.status === 'ACTIVE' && result.ip) {
+                        // Note: HTTP check should be done in mobile app, but we can verify here
+                        // For now, trust mobile app's status, but we'll add HTTP verification endpoint
+                    }
+                    
                     const resultId = `${result.hostname}:${ispName}:${device_id}`;
                     return d1Stmt.bind(
                         resultId,
                         result.hostname,
                         ispName, // Use corrected ISP name
-                        result.status,
+                        finalStatus,
                         result.ip || null,
                         result.latency || null,
                         device_id,
@@ -932,6 +947,98 @@ async function handleDNSCheck(
 
     } catch (error: any) {
         console.error('DNS check error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// HTTP Content Check API - Check if domain shows blocked page (e.g., MDES warning page)
+async function handleHTTPContentCheck(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const body = await request.json();
+        const { hostname, ip } = body;
+
+        if (!hostname) {
+            return jsonResponse({ error: 'Hostname required' }, 400, corsHeaders);
+        }
+
+        // Try to fetch HTTP content
+        const url = `https://${hostname}`;
+        try {
+            const httpResponse = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                },
+                signal: AbortSignal.timeout(10000), // 10 second timeout
+            });
+
+            const contentType = httpResponse.headers.get('content-type') || '';
+            const isHTML = contentType.includes('text/html');
+
+            if (isHTML) {
+                const htmlContent = await httpResponse.text();
+                
+                // Check for MDES blocking page indicators
+                const blockedIndicators = [
+                    'ถูกระงับ',
+                    'suspended',
+                    'MINISTRY OF DIGITAL ECONOMY AND SOCIETY',
+                    'กระทรวงดิจิทัลเพื่อเศรษฐกิจและสังคม',
+                    'Computer-related Crime Act',
+                    'Gambling Act',
+                    'illegal acts',
+                ];
+
+                const isBlocked = blockedIndicators.some(indicator => 
+                    htmlContent.toLowerCase().includes(indicator.toLowerCase())
+                );
+
+                if (isBlocked) {
+                    return jsonResponse({
+                        hostname,
+                        status: 'BLOCKED',
+                        ip: ip || '',
+                        blocked: true,
+                        reason: 'Shows MDES blocking page',
+                        details: 'Domain resolves but shows government blocking warning page',
+                        httpStatus: httpResponse.status,
+                    }, 200, corsHeaders);
+                }
+            }
+
+            // If we get here, domain is accessible (not blocked)
+            return jsonResponse({
+                hostname,
+                status: 'ACTIVE',
+                ip: ip || '',
+                blocked: false,
+                httpStatus: httpResponse.status,
+            }, 200, corsHeaders);
+
+        } catch (fetchError: any) {
+            // If fetch fails, we can't determine if blocked or not
+            console.error('HTTP fetch error:', fetchError);
+            return jsonResponse({
+                hostname,
+                status: 'ERROR',
+                ip: ip || '',
+                blocked: null,
+                error: fetchError.message,
+                details: 'Could not fetch HTTP content to check for blocking page',
+            }, 200, corsHeaders);
+        }
+
+    } catch (error: any) {
+        console.error('HTTP content check error:', error);
         return jsonResponse(
             { error: error.message || 'Internal server error' },
             500,
