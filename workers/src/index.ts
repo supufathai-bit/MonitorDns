@@ -560,6 +560,125 @@ async function handleUpdateDomains(
             domains: uniqueHostnames,
             updated: true,
         }, 200, corsHeaders);
+    } catch (error: any) {
+        console.error('Update domains error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Get next auto-scan time (shared across all users)
+async function handleGetNextScanTime(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const key = 'next_scan_time';
+        
+        // Get from D1
+        try {
+            const result = await env.DB.prepare(
+                "SELECT value, updated_at FROM settings WHERE key = ?"
+            ).bind(key).first();
+
+            if (result) {
+                try {
+                    const data = JSON.parse(result.value as string);
+                    return jsonResponse({
+                        success: true,
+                        nextScanTime: data.nextScanTime,
+                        checkInterval: data.checkInterval || 360,
+                        timestamp: data.timestamp || result.updated_at,
+                    }, 200, corsHeaders);
+                } catch {
+                    // If parse fails, return default
+                }
+            }
+        } catch (d1Error) {
+            console.warn('D1 get next scan time error:', d1Error);
+        }
+
+        // Return default if not found
+        return jsonResponse({
+            success: true,
+            nextScanTime: null,
+            checkInterval: 360,
+            timestamp: Date.now(),
+        }, 200, corsHeaders);
+    } catch (error: any) {
+        console.error('Get next scan time error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Update next auto-scan time (shared across all users)
+async function handleUpdateNextScanTime(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const body = await request.json();
+        const { nextScanTime, checkInterval } = body;
+
+        if (nextScanTime === undefined) {
+            return jsonResponse(
+                { error: 'nextScanTime is required' },
+                400,
+                corsHeaders
+            );
+        }
+
+        const key = 'next_scan_time';
+        const timestamp = Date.now();
+
+        // Save to D1
+        try {
+            await env.DB.prepare(
+                "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+            ).bind(
+                key,
+                JSON.stringify({
+                    nextScanTime,
+                    checkInterval: checkInterval || 360,
+                    timestamp,
+                }),
+                timestamp
+            ).run();
+
+            console.log(`Next scan time updated: ${new Date(nextScanTime).toLocaleString()}`);
+        } catch (d1Error) {
+            console.error('D1 save error:', d1Error);
+            return jsonResponse(
+                { error: 'Failed to save next scan time' },
+                500,
+                corsHeaders
+            );
+        }
+
+        return jsonResponse({
+            success: true,
+            message: 'Next scan time updated',
+            nextScanTime,
+            timestamp,
+        }, 200, corsHeaders);
+    } catch (error: any) {
+        console.error('Update next scan time error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
 
     } catch (error: any) {
         console.error('Update domains error:', error);
