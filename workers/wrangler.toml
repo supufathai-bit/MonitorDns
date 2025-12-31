@@ -17,3 +17,39 @@ database_id = "1a3833e0-a84f-45c8-b933-95e467f6c57f"
 # [vars]
 # API_KEY = "your-secret-api-key"
 
+
+compatibility_date = "2024-01-01"
+
+# KV Namespace (keep for backward compatibility)
+[[kv_namespaces]]
+binding = "SENTINEL_DATA"
+id = "a62456a79f7b4522bb4d9ccabb16b86e"  # Production KV namespace ID
+
+# D1 Database (better storage - 3x more writes/day)
+[[d1_databases]]
+binding = "DB"
+database_name = "sentinel-dns-db"
+database_id = "1a3833e0-a84f-45c8-b933-95e467f6c57f"
+
+# Optional: API Key for authentication
+# [vars]
+# API_KEY = "your-secret-api-key"
+
+
+compatibility_date = "2024-01-01"
+
+# KV Namespace (keep for backward compatibility)
+[[kv_namespaces]]
+binding = "SENTINEL_DATA"
+id = "a62456a79f7b4522bb4d9ccabb16b86e"  # Production KV namespace ID
+
+# D1 Database (better storage - 3x more writes/day)
+[[d1_databases]]
+binding = "DB"
+database_name = "sentinel-dns-db"
+database_id = "1a3833e0-a84f-45c8-b933-95e467f6c57f"
+
+# Optional: API Key for authentication
+# [vars]
+# API_KEY = "your-secret-api-key"
+

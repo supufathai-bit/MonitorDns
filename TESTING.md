@@ -111,3 +111,227 @@ node test-telegram.js YOUR_BOT_TOKEN YOUR_CHAT_ID
 - ถ้า Chat ID ไม่ถูกต้อง Bot จะไม่สามารถส่งข้อความได้
 - สำหรับการทดสอบ Chat ID ให้ส่งข้อความไปที่ Bot ก่อน
 
+
+## การทดสอบ API
+
+### วิธีที่ 1: ใช้ npm script (แนะนำ)
+
+1. **เริ่ม Next.js server:**
+   ```bash
+   npm run dev
+   ```
+
+2. **เปิด terminal ใหม่ และรัน:**
+   ```bash
+   npm run test:api google.com
+   ```
+   
+   หรือระบุ backend URL:
+   ```bash
+   npm run test:api google.com http://localhost:5555
+   ```
+   
+   หรือใช้ PORT environment variable:
+   ```bash
+   PORT=5555 npm run test:api google.com
+   ```
+
+### วิธีที่ 2: ใช้ node โดยตรง
+
+```bash
+node test-api.js google.com
+node test-api.js google.com http://localhost:5555
+PORT=5555 node test-api.js google.com
+```
+
+### ผลลัพธ์ที่คาดหวัง:
+- ✅ `status: "ACTIVE"` - Domain ใช้งานได้
+- ⚠️ `status: "BLOCKED"` - Domain ถูกบล็อก
+- ❌ `status: "ERROR"` - เกิดข้อผิดพลาด
+
+---
+
+## การทดสอบ Telegram Bot
+
+### ขั้นตอนการตั้งค่า:
+
+1. **สร้าง Bot:**
+   - เปิด Telegram และค้นหา `@BotFather`
+   - ส่งคำสั่ง `/newbot` และทำตามคำแนะนำ
+   - คัดลอก Bot Token ที่ได้ (รูปแบบ: `123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`)
+
+2. **หา Chat ID:**
+   - ส่งข้อความใดๆ ไปที่ Bot ที่สร้างไว้
+   - เปิดเบราว์เซอร์ไปที่:
+     ```
+     https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
+     ```
+   - หา `"chat":{"id":-1001234567890}` ใน JSON response
+   - คัดลอกตัวเลข Chat ID (อาจเป็นเลขลบ)
+
+### วิธีทดสอบ:
+
+#### วิธีที่ 1: ใช้ npm script (แนะนำ)
+
+```bash
+npm run test:telegram YOUR_BOT_TOKEN YOUR_CHAT_ID
+```
+
+ตัวอย่าง:
+```bash
+npm run test:telegram 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ -1001234567890
+```
+
+#### วิธีที่ 2: ใช้ node โดยตรง
+
+```bash
+node test-telegram.js YOUR_BOT_TOKEN YOUR_CHAT_ID
+```
+
+### ผลลัพธ์ที่คาดหวัง:
+- ✅ ข้อความทดสอบถูกส่งไปที่ Telegram สำเร็จ
+- ❌ เกิดข้อผิดพลาด (ตรวจสอบ Bot Token และ Chat ID)
+
+---
+
+## การทดสอบแบบครบวงจร
+
+1. **ทดสอบ API ก่อน:**
+   ```bash
+   npm run dev
+   # ใน terminal ใหม่
+   npm run test:api google.com
+   ```
+
+2. **ทดสอบ Telegram:**
+   ```bash
+   npm run test:telegram YOUR_BOT_TOKEN YOUR_CHAT_ID
+   ```
+
+3. **ทดสอบผ่าน UI:**
+   - เปิด `http://localhost:5555`
+   - ไปที่ Settings และกรอก Telegram Bot Token และ Chat ID
+   - กลับไปที่ Dashboard และกด "RUN FULL SCAN"
+   - ตรวจสอบว่าได้รับข้อความ Telegram หรือไม่
+
+---
+
+## หมายเหตุ
+
+- ต้องรัน `npm run dev` ก่อนทดสอบ API
+- Bot Token และ Chat ID ต้องถูกต้อง
+- ถ้า Chat ID ไม่ถูกต้อง Bot จะไม่สามารถส่งข้อความได้
+- สำหรับการทดสอบ Chat ID ให้ส่งข้อความไปที่ Bot ก่อน
+
+
+## การทดสอบ API
+
+### วิธีที่ 1: ใช้ npm script (แนะนำ)
+
+1. **เริ่ม Next.js server:**
+   ```bash
+   npm run dev
+   ```
+
+2. **เปิด terminal ใหม่ และรัน:**
+   ```bash
+   npm run test:api google.com
+   ```
+   
+   หรือระบุ backend URL:
+   ```bash
+   npm run test:api google.com http://localhost:5555
+   ```
+   
+   หรือใช้ PORT environment variable:
+   ```bash
+   PORT=5555 npm run test:api google.com
+   ```
+
+### วิธีที่ 2: ใช้ node โดยตรง
+
+```bash
+node test-api.js google.com
+node test-api.js google.com http://localhost:5555
+PORT=5555 node test-api.js google.com
+```
+
+### ผลลัพธ์ที่คาดหวัง:
+- ✅ `status: "ACTIVE"` - Domain ใช้งานได้
+- ⚠️ `status: "BLOCKED"` - Domain ถูกบล็อก
+- ❌ `status: "ERROR"` - เกิดข้อผิดพลาด
+
+---
+
+## การทดสอบ Telegram Bot
+
+### ขั้นตอนการตั้งค่า:
+
+1. **สร้าง Bot:**
+   - เปิด Telegram และค้นหา `@BotFather`
+   - ส่งคำสั่ง `/newbot` และทำตามคำแนะนำ
+   - คัดลอก Bot Token ที่ได้ (รูปแบบ: `123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`)
+
+2. **หา Chat ID:**
+   - ส่งข้อความใดๆ ไปที่ Bot ที่สร้างไว้
+   - เปิดเบราว์เซอร์ไปที่:
+     ```
+     https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
+     ```
+   - หา `"chat":{"id":-1001234567890}` ใน JSON response
+   - คัดลอกตัวเลข Chat ID (อาจเป็นเลขลบ)
+
+### วิธีทดสอบ:
+
+#### วิธีที่ 1: ใช้ npm script (แนะนำ)
+
+```bash
+npm run test:telegram YOUR_BOT_TOKEN YOUR_CHAT_ID
+```
+
+ตัวอย่าง:
+```bash
+npm run test:telegram 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ -1001234567890
+```
+
+#### วิธีที่ 2: ใช้ node โดยตรง
+
+```bash
+node test-telegram.js YOUR_BOT_TOKEN YOUR_CHAT_ID
+```
+
+### ผลลัพธ์ที่คาดหวัง:
+- ✅ ข้อความทดสอบถูกส่งไปที่ Telegram สำเร็จ
+- ❌ เกิดข้อผิดพลาด (ตรวจสอบ Bot Token และ Chat ID)
+
+---
+
+## การทดสอบแบบครบวงจร
+
+1. **ทดสอบ API ก่อน:**
+   ```bash
+   npm run dev
+   # ใน terminal ใหม่
+   npm run test:api google.com
+   ```
+
+2. **ทดสอบ Telegram:**
+   ```bash
+   npm run test:telegram YOUR_BOT_TOKEN YOUR_CHAT_ID
+   ```
+
+3. **ทดสอบผ่าน UI:**
+   - เปิด `http://localhost:5555`
+   - ไปที่ Settings และกรอก Telegram Bot Token และ Chat ID
+   - กลับไปที่ Dashboard และกด "RUN FULL SCAN"
+   - ตรวจสอบว่าได้รับข้อความ Telegram หรือไม่
+
+---
+
+## หมายเหตุ
+
+- ต้องรัน `npm run dev` ก่อนทดสอบ API
+- Bot Token และ Chat ID ต้องถูกต้อง
+- ถ้า Chat ID ไม่ถูกต้อง Bot จะไม่สามารถส่งข้อความได้
+- สำหรับการทดสอบ Chat ID ให้ส่งข้อความไปที่ Bot ก่อน
+

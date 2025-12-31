@@ -11,3 +11,27 @@
   }
 }
 
+  "name": "dns-resolver-service",
+  "version": "1.0.0",
+  "description": "DNS Resolver Service for ISP DNS checking",
+  "main": "dns-resolver-service.js",
+  "scripts": {
+    "start": "node dns-resolver-service.js"
+  },
+  "dependencies": {
+    "dns-packet": "^5.4.0"
+  }
+}
+
+  "name": "dns-resolver-service",
+  "version": "1.0.0",
+  "description": "DNS Resolver Service for ISP DNS checking",
+  "main": "dns-resolver-service.js",
+  "scripts": {
+    "start": "node dns-resolver-service.js"
+  },
+  "dependencies": {
+    "dns-packet": "^5.4.0"
+  }
+}
+

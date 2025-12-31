@@ -66,3 +66,89 @@ logs/
 # Cloudflare Workers (separate project)
 cloudflare-workers-api.ts
 # workers/ - Keep workers folder in git
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local env files
+.env*.local
+.env
+
+# Vercel
+.vercel
+
+# Typescript
+*.tsbuildinfo
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# History
+*.history/*
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Cloudflare Workers (separate project)
+cloudflare-workers-api.ts
+# workers/ - Keep workers folder in git
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local env files
+.env*.local
+.env
+
+# Vercel
+.vercel
+
+# Typescript
+*.tsbuildinfo
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# History
+*.history/*
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Cloudflare Workers (separate project)
+cloudflare-workers-api.ts
+# workers/ - Keep workers folder in git

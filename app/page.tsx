@@ -488,6 +488,20 @@ export default function Home() {
                         }
                     }
                 }
+
+                // Sync nextScanTime from Workers API (important for all users to see same time)
+                const nextScanRes = await fetch(`${workersUrl}/api/next-scan-time`);
+                if (nextScanRes.ok) {
+                    const nextScanData = await nextScanRes.json();
+                    if (nextScanData.success && nextScanData.nextScanTime) {
+                        // Only update if different (to avoid unnecessary re-renders)
+                        if (nextScanTimeRef.current !== nextScanData.nextScanTime) {
+                            nextScanTimeRef.current = nextScanData.nextScanTime;
+                            setNextScanTime(nextScanData.nextScanTime);
+                            console.log(`🔄 [Sync] Next scan time synced: ${new Date(nextScanData.nextScanTime).toLocaleString()}`);
+                        }
+                    }
+                }
             } catch (error) {
                 console.error('Sync error:', error);
             }
@@ -1747,6 +1761,13 @@ export default function Home() {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                )}
+            </main>
+        </div>
+    );
+}
                         </div>
                     </div>
                 )}
