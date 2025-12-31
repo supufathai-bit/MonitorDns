@@ -359,7 +359,7 @@ export default function Home() {
                                                         ip: workerResult.ip || '',
                                                         latency: workerResult.latency || 0,
                                                         details: `From D1 (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
-                                                        source: 'd1',
+                                                        source: 'server',
                                                         deviceId: workerResult.device_id,
                                                         timestamp: workerResult.timestamp,
                                                     };
