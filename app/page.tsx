@@ -1521,43 +1521,42 @@ export default function Home() {
 
         let isChecking = false; // Prevent concurrent checks
 
-        // Set initial next scan time immediately (fallback)
-        const intervalMs = settings.checkInterval * 60 * 1000;
-        const fallbackNextScan = Date.now() + intervalMs;
-        nextScanTimeRef.current = fallbackNextScan;
-        setNextScanTime(fallbackNextScan);
-
-        // Get shared next scan time from Workers API
+        // Get shared next scan time from Workers API (D1) - READ ONLY, DO NOT CREATE NEW ONE
+        // Only read from shared storage, don't write unless explicitly triggered (RUN FULL SCAN or auto-scan timer)
         const syncNextScanTime = async () => {
             try {
                 const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.nextScanTime && data.nextScanTime > Date.now()) {
-                        // Use shared next scan time
+                        // Use shared next scan time from D1
                         nextScanTimeRef.current = data.nextScanTime;
                         setNextScanTime(data.nextScanTime);
-                        console.log(`📅 Using shared next scan time: ${new Date(data.nextScanTime).toLocaleString()}`);
+                        console.log(`📅 Using shared next scan time from D1: ${new Date(data.nextScanTime).toLocaleString()}`);
                         return;
+                    } else {
+                        // No shared time or expired - don't create new one, just set to null
+                        // Only auto-scan timer or manual trigger (RUN FULL SCAN) should create new nextScanTime
+                        nextScanTimeRef.current = null;
+                        setNextScanTime(null);
+                        console.log('📅 No shared next scan time in D1 (will be set when scan is triggered)');
                     }
+                } else {
+                    // API error - don't create new one
+                    nextScanTimeRef.current = null;
+                    setNextScanTime(null);
+                    console.log('📅 Failed to fetch next scan time from D1');
                 }
-                
-                // No shared time or expired - DON'T CREATE NEW ONE
-                // Only read from D1, don't write unless explicitly triggered (RUN FULL SCAN or auto-scan timer)
-                nextScanTimeRef.current = null;
-                setNextScanTime(null);
-                console.log('📅 No shared next scan time in D1 (will be set when scan is triggered)');
             } catch (error) {
                 console.error('Error syncing next scan time:', error);
-                // Keep fallback time that was set above
+                // Don't create new one on error - just set to null
+                nextScanTimeRef.current = null;
+                setNextScanTime(null);
             }
         };
 
-        // Sync immediately (but don't wait - we already set fallback)
+        // Sync immediately - only read from D1, don't create new one
         syncNextScanTime();
-
-        // Update ref when nextScanTime changes (for display purposes)
-        nextScanTimeRef.current = fallbackNextScan;
 
         // Check every 10 seconds if it's time to scan
         const checkInterval = setInterval(async () => {
