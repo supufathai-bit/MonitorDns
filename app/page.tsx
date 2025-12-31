@@ -89,18 +89,60 @@ export default function Home() {
                                 const domainsData = await domainsRes.json();
                                 if (domainsData.success && domainsData.domains && domainsData.domains.length > 0) {
                                     setDomains(domainsData.domains);
-                                    addLog(`Loaded ${domainsData.domains.length} domains from Workers`, 'success');
+                                    addLog(`Loaded ${domainsData.domains.length} domains from Workers (shared storage)`, 'success');
+                                    // Also save to localStorage as backup
+                                    localStorage.setItem('sentinel_domains', JSON.stringify(domainsData.domains));
                                 } else {
-                                    // No domains in Workers, use defaults
-                                    const initialDomains = DEFAULT_DOMAINS.map(url => ({
-                                        id: generateId(),
-                                        url,
-                                        hostname: getHostname(url),
-                                        lastCheck: null,
-                                        results: createEmptyResults(),
-                                        isMonitoring: true
-                                    }));
-                                    setDomains(initialDomains);
+                                    // No domains in Workers, check localStorage
+                                    const savedDomains = localStorage.getItem('sentinel_domains');
+                                    if (savedDomains) {
+                                        try {
+                                            setDomains(JSON.parse(savedDomains));
+                                            addLog('Loaded domains from localStorage (backup)', 'info');
+                                        } catch {
+                                            // If parse fails, use defaults
+                                            const initialDomains = DEFAULT_DOMAINS.map(url => ({
+                                                id: generateId(),
+                                                url,
+                                                hostname: getHostname(url),
+                                                lastCheck: null,
+                                                results: createEmptyResults(),
+                                                isMonitoring: true
+                                            }));
+                                            setDomains(initialDomains);
+                                        }
+                                    } else {
+                                        // No domains anywhere, use defaults
+                                        const initialDomains = DEFAULT_DOMAINS.map(url => ({
+                                            id: generateId(),
+                                            url,
+                                            hostname: getHostname(url),
+                                            lastCheck: null,
+                                            results: createEmptyResults(),
+                                            isMonitoring: true
+                                        }));
+                                        setDomains(initialDomains);
+                                    }
+                                }
+                            } else {
+                                // Workers API failed, try localStorage
+                                const savedDomains = localStorage.getItem('sentinel_domains');
+                                if (savedDomains) {
+                                    try {
+                                        setDomains(JSON.parse(savedDomains));
+                                        addLog('Loaded domains from localStorage (Workers API unavailable)', 'info');
+                                    } catch {
+                                        // Use defaults
+                                        const initialDomains = DEFAULT_DOMAINS.map(url => ({
+                                            id: generateId(),
+                                            url,
+                                            hostname: getHostname(url),
+                                            lastCheck: null,
+                                            results: createEmptyResults(),
+                                            isMonitoring: true
+                                        }));
+                                        setDomains(initialDomains);
+                                    }
                                 }
                             }
 
@@ -108,50 +150,99 @@ export default function Home() {
                                 const settingsData = await settingsRes.json();
                                 if (settingsData.success && settingsData.settings) {
                                     setSettings(settingsData.settings);
-                                    addLog('Loaded settings from Workers', 'success');
+                                    addLog('Loaded settings from Workers (shared storage)', 'success');
+                                    // Also save to localStorage as backup
+                                    localStorage.setItem('sentinel_settings', JSON.stringify(settingsData.settings));
+                                } else {
+                                    // No settings in Workers, try localStorage
+                                    const savedSettings = localStorage.getItem('sentinel_settings');
+                                    if (savedSettings) {
+                                        try {
+                                            setSettings(JSON.parse(savedSettings));
+                                            addLog('Loaded settings from localStorage (backup)', 'info');
+                                        } catch {
+                                            // Use defaults
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Workers API failed, try localStorage
+                                const savedSettings = localStorage.getItem('sentinel_settings');
+                                if (savedSettings) {
+                                    try {
+                                        setSettings(JSON.parse(savedSettings));
+                                        addLog('Loaded settings from localStorage (Workers API unavailable)', 'info');
+                                    } catch {
+                                        // Use defaults
+                                    }
                                 }
                             }
                         } catch (apiError) {
                             console.error('Failed to load from Workers API, using localStorage:', apiError);
-                            // Fallback to localStorage
-                            loadFromLocalStorage();
+                            // Fallback to localStorage only if Workers API completely fails
+                            const savedDomains = localStorage.getItem('sentinel_domains');
+                            const savedSettings = localStorage.getItem('sentinel_settings');
+                            
+                            if (savedDomains) {
+                                try {
+                                    setDomains(JSON.parse(savedDomains));
+                                } catch {
+                                    // Use defaults
+                                }
+                            }
+                            
+                            if (savedSettings) {
+                                try {
+                                    setSettings(JSON.parse(savedSettings));
+                                } catch {
+                                    // Use defaults
+                                }
+                            }
                         }
                     } else {
                         // No Workers URL, use localStorage
-                        loadFromLocalStorage();
+                        const savedDomains = localStorage.getItem('sentinel_domains');
+                        const savedSettings = localStorage.getItem('sentinel_settings');
+                        
+                        if (savedDomains) {
+                            try {
+                                setDomains(JSON.parse(savedDomains));
+                            } catch {
+                                // Use defaults
+                            }
+                        }
+                        
+                        if (savedSettings) {
+                            try {
+                                setSettings(JSON.parse(savedSettings));
+                            } catch {
+                                // Use defaults
+                            }
+                        }
                     }
                 } catch (e) {
                     console.error("Error loading data:", e);
-                    loadFromLocalStorage();
-                } finally {
-                    loadedRef.current = true;
-                }
-            };
-
-            const loadFromLocalStorage = () => {
-                try {
+                    // Last resort: try localStorage
                     const savedDomains = localStorage.getItem('sentinel_domains');
                     const savedSettings = localStorage.getItem('sentinel_settings');
-
+                    
                     if (savedDomains) {
-                        setDomains(JSON.parse(savedDomains));
-                    } else {
-                        const initialDomains = DEFAULT_DOMAINS.map(url => ({
-                            id: generateId(),
-                            url,
-                            hostname: getHostname(url),
-                            lastCheck: null,
-                            results: createEmptyResults(),
-                            isMonitoring: true
-                        }));
-                        setDomains(initialDomains);
+                        try {
+                            setDomains(JSON.parse(savedDomains));
+                        } catch {
+                            // Use defaults
+                        }
                     }
-
+                    
                     if (savedSettings) {
-                        setSettings(JSON.parse(savedSettings));
+                        try {
+                            setSettings(JSON.parse(savedSettings));
+                        } catch {
+                            // Use defaults
+                        }
                     }
-                } catch (e) {
-                    console.error("Error loading from localStorage:", e);
+                } finally {
+                    loadedRef.current = true;
                 }
             };
 
