@@ -546,9 +546,29 @@ export default function Home() {
                 if (verifyResponse.ok) {
                     const verifyData = await verifyResponse.json();
                     console.log('✅ Verified domains in Workers:', verifyData.domains);
-                    if (verifyData.domains.length !== hostnames.length) {
-                        addLog(`Warning: Domains count mismatch. Expected ${hostnames.length}, got ${verifyData.domains.length}`, 'error');
-                        console.error('❌ Mismatch! Expected:', hostnames, 'Got:', verifyData.domains);
+                    
+                    // Normalize hostnames for comparison (remove www, lowercase)
+                    const normalizeHostname = (hostname: string): string => {
+                        return hostname.toLowerCase().replace(/^www\./, '');
+                    };
+                    
+                    const normalizedExpected = hostnames.map(normalizeHostname).sort();
+                    const normalizedGot = (verifyData.domains || []).map(normalizeHostname).sort();
+                    
+                    // Check if normalized hostnames match (ignore order and www prefix)
+                    const expectedSet = new Set(normalizedExpected);
+                    const gotSet = new Set(normalizedGot);
+                    const missing = normalizedExpected.filter(h => !gotSet.has(h));
+                    const extra = normalizedGot.filter(h => !expectedSet.has(h));
+                    
+                    if (missing.length > 0 || extra.length > 0) {
+                        if (missing.length > 0) {
+                            addLog(`Warning: ${missing.length} domain(s) missing in Workers: ${missing.join(', ')}`, 'error');
+                        }
+                        if (extra.length > 0) {
+                            addLog(`Info: ${extra.length} extra domain(s) in Workers: ${extra.join(', ')}`, 'info');
+                        }
+                        console.warn('⚠️ Domain mismatch:', { missing, extra, expected: normalizedExpected, got: normalizedGot });
                     } else {
                         addLog(`Verified: Workers API has ${verifyData.domains.length} domains`, 'success');
                         console.log('✅ Verified! Domains match:', verifyData.domains);
