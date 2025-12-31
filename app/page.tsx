@@ -340,58 +340,45 @@ export default function Home() {
         loadResultsFromWorkers();
     }, [loadResultsFromWorkers]);
 
-    // Server-Sent Events (SSE) for real-time results updates
+    // Fast polling for real-time results updates (every 2 seconds)
+    // This is more reliable than SSE in Cloudflare Workers
     useEffect(() => {
         if (!loadedRef.current) return;
 
         const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
         if (!workersUrl) {
-            console.log('Workers URL not configured, skipping SSE connection');
+            console.log('Workers URL not configured, skipping polling');
             return;
         }
 
-        // Connect to SSE stream
-        const sseUrl = `${workersUrl.replace(/\/$/, '')}/api/results/stream`;
-        console.log('🔌 [SSE] Connecting to:', sseUrl);
-        const eventSource = new EventSource(sseUrl);
+        let lastCheckTime = Date.now();
+        console.log('🔄 [Poll] Starting fast polling for new results (every 2 seconds)');
 
-        eventSource.onopen = () => {
-            console.log('✅ [SSE] Connected to results stream');
-            addLog('Connected to real-time updates', 'success');
-        };
-
-        eventSource.onmessage = (event) => {
+        const pollInterval = setInterval(async () => {
             try {
-                const data = JSON.parse(event.data);
+                // Check for new results
+                const response = await fetchResultsFromWorkers(workersUrl);
                 
-                if (data.type === 'connected') {
-                    console.log('✅ [SSE]', data.message);
-                    addLog('Connected to real-time updates', 'success');
-                } else if (data.type === 'results' && data.results && data.results.length > 0) {
-                    console.log('🔄 [SSE] Received new results:', data.results.length, data.message || '');
-                    addLog(`📱 New results received: ${data.results.length} updates`, 'success');
-                    // Trigger loadResultsFromWorkers to update UI with new results immediately
-                    loadResultsFromWorkers();
-                } else if (data.type === 'heartbeat') {
-                    // Just keep connection alive (silent)
-                    // console.log('💓 [SSE] Heartbeat');
-                } else if (data.type === 'error') {
-                    console.error('❌ [SSE] Error:', data.message);
-                    addLog(`SSE error: ${data.message}`, 'error');
+                if (response.success && response.results.length > 0) {
+                    // Check if we have new results (compare timestamps)
+                    const latestResult = Math.max(...response.results.map(r => r.timestamp));
+                    
+                    if (latestResult > lastCheckTime) {
+                        console.log(`🔄 [Poll] Found new results! Latest timestamp: ${latestResult} (was: ${lastCheckTime})`);
+                        addLog(`📱 New results detected: ${response.results.length} updates`, 'success');
+                        lastCheckTime = latestResult;
+                        // Load and update results
+                        await loadResultsFromWorkers();
+                    }
                 }
             } catch (error) {
-                console.error('Error parsing SSE message:', error);
+                console.error('Poll error:', error);
             }
-        };
-
-        eventSource.onerror = (error) => {
-            console.error('SSE connection error:', error);
-            // EventSource will automatically reconnect
-        };
+        }, 2000); // Poll every 2 seconds
 
         return () => {
-            eventSource.close();
-            console.log('🔌 [SSE] Disconnected from results stream');
+            clearInterval(pollInterval);
+            console.log('🔄 [Poll] Stopped polling');
         };
     }, [loadedRef.current, loadResultsFromWorkers, addLog]);
 
