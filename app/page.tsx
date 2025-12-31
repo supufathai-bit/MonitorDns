@@ -517,19 +517,16 @@ export default function Home() {
                 return;
             }
 
-            // Extract hostnames from domains
-            const hostnames = domainsToSync.map(d => d.hostname);
-
-            addLog(`Syncing ${hostnames.length} domains to Workers API...`, 'info');
-            console.log('📤 Syncing domains to Workers:', hostnames);
+            addLog(`Syncing ${domainsToSync.length} domains to Workers API...`, 'info');
+            console.log('📤 Syncing domains to Workers:', domainsToSync.map(d => ({ hostname: d.hostname, telegramChatId: d.telegramChatId })));
             console.log('📤 Workers URL:', workersUrl);
-            console.log('📤 Request body:', JSON.stringify({ domains: hostnames }));
+            console.log('📤 Request body:', JSON.stringify({ domains: domainsToSync }));
 
-            // Sync to Workers API - Use the same endpoint mobile app uses
-            const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`, {
+            // Sync to Workers API - Use frontend/domains endpoint to preserve telegram_chat_id
+            const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/frontend/domains`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ domains: hostnames }),
+                body: JSON.stringify({ domains: domainsToSync }),
             });
 
             console.log('📥 Response status:', response.status);
