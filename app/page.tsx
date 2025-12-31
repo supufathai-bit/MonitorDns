@@ -431,6 +431,74 @@ export default function Home() {
         loadResultsFromWorkers();
     }, [loadResultsFromWorkers]);
 
+    // Sync domains and settings from Workers API periodically (every 30 seconds)
+    // This ensures all users see the same data
+    useEffect(() => {
+        if (!loadedRef.current) return;
+
+        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+        if (!workersUrl) {
+            console.log('Workers URL not configured, skipping sync');
+            return;
+        }
+
+        const syncFromWorkers = async () => {
+            try {
+                // Sync domains
+                const domainsRes = await fetch(`${workersUrl}/api/frontend/domains`);
+                if (domainsRes.ok) {
+                    const domainsData = await domainsRes.json();
+                    if (domainsData.success && domainsData.domains && domainsData.domains.length > 0) {
+                        // Only update if different (to avoid unnecessary re-renders)
+                        const currentHostnames = domainsRef.current.map(d => d.hostname).sort().join(',');
+                        const newHostnames = domainsData.domains.map((d: any) => d.hostname).sort().join(',');
+                        
+                        if (currentHostnames !== newHostnames) {
+                            console.log('🔄 [Sync] Domains changed, updating...');
+                            setDomains(domainsData.domains);
+                        }
+                        
+                        // Also check for telegram_chat_id changes
+                        const currentDomains = domainsRef.current;
+                        const hasChanges = domainsData.domains.some((newDomain: any) => {
+                            const currentDomain = currentDomains.find(d => d.hostname === newDomain.hostname);
+                            return !currentDomain || currentDomain.telegramChatId !== newDomain.telegramChatId;
+                        });
+                        
+                        if (hasChanges) {
+                            console.log('🔄 [Sync] Domain settings changed (telegram_chat_id), updating...');
+                            setDomains(domainsData.domains);
+                        }
+                    }
+                }
+
+                // Sync settings
+                const settingsRes = await fetch(`${workersUrl}/api/frontend/settings`);
+                if (settingsRes.ok) {
+                    const settingsData = await settingsRes.json();
+                    if (settingsData.success && settingsData.settings) {
+                        // Only update if different
+                        const currentSettingsStr = JSON.stringify(settingsRef.current);
+                        const newSettingsStr = JSON.stringify(settingsData.settings);
+                        
+                        if (currentSettingsStr !== newSettingsStr) {
+                            console.log('🔄 [Sync] Settings changed, updating...');
+                            setSettings(settingsData.settings);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Sync error:', error);
+            }
+        };
+
+        // Sync immediately, then every 30 seconds
+        syncFromWorkers();
+        const syncInterval = setInterval(syncFromWorkers, 30000);
+
+        return () => clearInterval(syncInterval);
+    }, [loadedRef.current]);
+
     // Adaptive polling to check for new results from mobile app
     // Only polls to detect when mobile app sends new results (doesn't trigger checks)
     useEffect(() => {
