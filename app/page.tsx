@@ -978,19 +978,27 @@ export default function Home() {
 
     const handleUpdateDomain = async (id: string, updates: Partial<Domain>) => {
         const updatedDomains = domainsRef.current.map(d => d.id === id ? { ...d, ...updates } : d);
-        setDomains(updatedDomains);
-        
         const updatedDomain = updatedDomains.find(d => d.id === id);
+        
         if (updatedDomain) {
             addLog(`Updated settings for ${updatedDomain.hostname}`, 'info');
             
-            // Sync immediately to D1 so all users see the same telegramChatId
+            // Sync to D1 FIRST before updating state to avoid race condition
+            // This ensures D1 is updated before any useEffect triggers
             try {
+                console.log('🔄 Syncing domain settings to D1 before state update...');
                 await syncDomainsToWorkers(updatedDomains);
-                console.log('✅ Domain settings synced to D1');
+                console.log('✅ Domain settings synced to D1 successfully');
+                
+                // Only update state AFTER sync is complete
+                // This prevents useEffect from saving old data
+                setDomains(updatedDomains);
+                addLog(`Settings saved for ${updatedDomain.hostname}`, 'success');
             } catch (error) {
                 console.error('❌ Error syncing domain settings to D1:', error);
                 addLog('Failed to sync domain settings to D1', 'error');
+                // Still update state even if sync fails (user sees the change locally)
+                setDomains(updatedDomains);
             }
         }
     };
