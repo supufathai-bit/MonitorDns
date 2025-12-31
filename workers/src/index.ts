@@ -521,6 +521,21 @@ async function handleUpdateDomains(
         }
 
         // Save to D1 (primary storage)
+        // First, delete domains that are not in the new list
+        const domainsToDelete = existingDomains.filter(existing => 
+            !uniqueHostnames.some(newHostname => 
+                newHostname.toLowerCase() === existing.toLowerCase()
+            )
+        );
+        
+        if (domainsToDelete.length > 0) {
+            console.log(`Deleting ${domainsToDelete.length} old domains:`, domainsToDelete);
+            const deleteStmt = env.DB.prepare("DELETE FROM domains WHERE hostname = ?");
+            const deleteBatch = domainsToDelete.map(hostname => deleteStmt.bind(hostname));
+            await env.DB.batch(deleteBatch);
+        }
+        
+        // Then, insert or replace domains in the new list
         const stmt = env.DB.prepare("INSERT OR REPLACE INTO domains (id, hostname, url, updated_at) VALUES (?, ?, ?, ?)");
         const batch = uniqueHostnames.map(hostname =>
             stmt.bind(hostname, hostname, hostname, Date.now())
