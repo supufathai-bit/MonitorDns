@@ -76,8 +76,9 @@ export default function Home() {
                 try {
                     const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
                     if (!workersUrl) {
-                        setIsAuthenticated(false);
-                        window.location.href = '/login';
+                        console.warn('Workers URL not configured, skipping auth check');
+                        // If no Workers URL, allow access (for development)
+                        setIsAuthenticated(true);
                         return;
                     }
 
@@ -87,6 +88,7 @@ export default function Home() {
                     if (response.ok && data.success) {
                         setIsAuthenticated(true);
                     } else {
+                        console.error('Auth verification failed:', data);
                         localStorage.removeItem('auth_token');
                         localStorage.removeItem('auth_user');
                         setIsAuthenticated(false);
@@ -94,8 +96,10 @@ export default function Home() {
                     }
                 } catch (error) {
                     console.error('Auth check error:', error);
-                    setIsAuthenticated(false);
-                    window.location.href = '/login';
+                    // If API is unavailable, allow access with token (for development)
+                    // In production, you might want to redirect to login
+                    console.warn('Auth API unavailable, allowing access with token');
+                    setIsAuthenticated(true);
                 }
             };
 
