@@ -1,6 +1,17 @@
 // Cloudflare Workers API for Sentinel DNS Monitor
 // This handles API requests since Cloudflare Pages is static
 
+// Cloudflare Workers types
+interface ScheduledEvent {
+    scheduledTime: number;
+    cron: string;
+}
+
+interface ExecutionContext {
+    waitUntil(promise: Promise<any>): void;
+    passThroughOnException(): void;
+}
+
 export interface Env {
     // @ts-ignore - KVNamespace is provided by Cloudflare Workers runtime
     SENTINEL_DATA: KVNamespace;  // Keep for backward compatibility
