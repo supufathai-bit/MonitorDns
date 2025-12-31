@@ -28,6 +28,93 @@ interface SyncRequest {
 }
 
 export default {
+    // Scheduled handler for Cron Trigger (runs every 10 minutes)
+    async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+        console.log('⏰ [Cron] Scheduled event triggered');
+        
+        try {
+            // Get next scan time from D1
+            const key = 'next_scan_time';
+            const result = await env.DB.prepare(
+                "SELECT value, updated_at FROM settings WHERE key = ?"
+            ).bind(key).first();
+
+            if (!result) {
+                console.log('⏰ [Cron] No next scan time found, skipping');
+                return;
+            }
+
+            const data = JSON.parse(result.value as string);
+            const nextScanTime = data.nextScanTime;
+            const checkInterval = data.checkInterval || 360;
+
+            if (!nextScanTime) {
+                console.log('⏰ [Cron] No next scan time set, skipping');
+                return;
+            }
+
+            const now = Date.now();
+            const timeUntilScan = nextScanTime - now;
+
+            // Check if it's time to scan (within 5 minutes window)
+            if (timeUntilScan <= 0 && timeUntilScan >= -300000) { // -5 minutes tolerance
+                console.log(`⏰ [Cron] Time to scan! nextScanTime: ${new Date(nextScanTime).toISOString()}, now: ${new Date(now).toISOString()}`);
+                
+                // Trigger mobile app to check DNS
+                const triggerKey = 'trigger:check';
+                const triggerData = {
+                    triggered: true,
+                    timestamp: now,
+                    source: 'cron-auto-scan'
+                };
+
+                // Save trigger to D1
+                try {
+                    await env.DB.prepare(
+                        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+                    ).bind(
+                        triggerKey,
+                        JSON.stringify(triggerData),
+                        now
+                    ).run();
+                    console.log('⏰ [Cron] Trigger check saved to D1');
+                } catch (error) {
+                    console.error('⏰ [Cron] Error saving trigger to D1:', error);
+                }
+
+                // Also save to KV for backward compatibility
+                try {
+                    await env.SENTINEL_DATA.put(triggerKey, JSON.stringify(triggerData));
+                } catch (error) {
+                    console.warn('⏰ [Cron] Failed to save trigger to KV (non-critical):', error);
+                }
+
+                // Update next scan time
+                const intervalMs = checkInterval * 60 * 1000;
+                const newNextScanTime = now + intervalMs;
+                const nextScanData = {
+                    nextScanTime: newNextScanTime,
+                    checkInterval: checkInterval,
+                    timestamp: now
+                };
+
+                await env.DB.prepare(
+                    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+                ).bind(
+                    key,
+                    JSON.stringify(nextScanData),
+                    now
+                ).run();
+
+                console.log(`⏰ [Cron] Next scan time updated: ${new Date(newNextScanTime).toISOString()}`);
+            } else {
+                console.log(`⏰ [Cron] Not time yet. Time until scan: ${Math.round(timeUntilScan / 1000 / 60)} minutes`);
+            }
+        } catch (error) {
+            console.error('⏰ [Cron] Error in scheduled handler:', error);
+        }
+    },
+
     async fetch(request: Request, env: Env): Promise<Response> {
         const url = new URL(request.url);
 
@@ -1464,15 +1551,15 @@ async function handleSaveFrontendDomains(
                 }
                 return false;
             });
-            
+
             const url = typeof domainObj === 'string' ? domainObj : (domainObj?.url || hostname);
             const telegramChatId = typeof domainObj === 'object' && domainObj !== null ? (domainObj.telegramChatId || null) : null;
-            
+
             // Log for debugging
             if (telegramChatId) {
                 console.log(`[handleSaveFrontendDomains] Saving telegramChatId for ${hostname}: ${telegramChatId}`);
             }
-            
+
             return stmt.bind(hostname, hostname, url, 1, telegramChatId, Date.now());
         });
         await env.DB.batch(batch);
