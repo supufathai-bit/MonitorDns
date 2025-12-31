@@ -1521,7 +1521,21 @@ export default function Home() {
                     }
                 }
                 
-                // No shared time or expired, set new one
+                // No shared time or expired - only create new one if we're the first user
+                // Check again to see if someone else just created it
+                const recheckResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
+                if (recheckResponse.ok) {
+                    const recheckData = await recheckResponse.json();
+                    if (recheckData.nextScanTime && recheckData.nextScanTime > Date.now()) {
+                        // Someone else just created it, use theirs
+                        nextScanTimeRef.current = recheckData.nextScanTime;
+                        setNextScanTime(recheckData.nextScanTime);
+                        console.log(`📅 Using newly created shared next scan time: ${new Date(recheckData.nextScanTime).toLocaleString()}`);
+                        return;
+                    }
+                }
+                
+                // Still no shared time - create new one (only if truly missing)
                 const nextScan = Date.now() + intervalMs;
                 nextScanTimeRef.current = nextScan;
                 setNextScanTime(nextScan);
@@ -1532,7 +1546,7 @@ export default function Home() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ nextScanTime: nextScan, checkInterval: settings.checkInterval }),
                     });
-                    console.log(`📅 Set new shared next scan time: ${new Date(nextScan).toLocaleString()}`);
+                    console.log(`📅 Created new shared next scan time: ${new Date(nextScan).toLocaleString()}`);
                 } catch (saveError) {
                     console.error('Error saving next scan time:', saveError);
                 }
