@@ -106,6 +106,16 @@ export default {
             return handleSaveFrontendSettings(request, env, corsHeaders);
         }
 
+        // Get next auto-scan time (shared across all users)
+        if (url.pathname === '/api/next-scan-time' && request.method === 'GET') {
+            return handleGetNextScanTime(request, env, corsHeaders);
+        }
+
+        // Update next auto-scan time (shared across all users)
+        if (url.pathname === '/api/next-scan-time' && request.method === 'POST') {
+            return handleUpdateNextScanTime(request, env, corsHeaders);
+        }
+
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
@@ -151,14 +161,14 @@ async function handleMobileSync(
                 const d1Stmt = env.DB.prepare(
                     "INSERT OR REPLACE INTO results (id, hostname, isp_name, status, ip, latency, device_id, device_info, timestamp, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 );
-                
+
                 const d1Batch = results.map(result => {
                     // Use device_info.isp if isp_name is "Unknown" or empty
                     let ispName = result.isp_name;
                     if (!ispName || ispName === 'Unknown' || ispName === 'unknown') {
                         ispName = device_info?.isp || 'Unknown';
                     }
-                    
+
                     // Determine status based on IP address:
                     // - If IP exists = ACTIVE (DNS resolution successful)
                     // - If no IP = BLOCKED (DNS resolution failed)
@@ -171,7 +181,7 @@ async function handleMobileSync(
                         // No IP address = DNS resolution failed = BLOCKED
                         finalStatus = 'BLOCKED';
                     }
-                    
+
                     const resultId = `${result.hostname}:${ispName}:${device_id}`;
                     return d1Stmt.bind(
                         resultId,
@@ -186,7 +196,7 @@ async function handleMobileSync(
                         'mobile-app'
                     );
                 });
-                
+
                 await env.DB.batch(d1Batch);
                 console.log(`Mobile sync: Saved ${results.length} results to D1`);
             } catch (d1Error) {
@@ -211,7 +221,7 @@ async function handleMobileSync(
                 if (!ispName || ispName === 'Unknown' || ispName === 'unknown') {
                     ispName = device_info?.isp || 'Unknown';
                 }
-                
+
                 const latestKey = `latest:${result.hostname}:${ispName}`;
 
                 // Check if we need to update (only if different or missing)
@@ -523,19 +533,19 @@ async function handleUpdateDomains(
 
         // Save to D1 (primary storage)
         // First, delete domains that are not in the new list
-        const domainsToDelete = existingDomains.filter(existing => 
-            !uniqueHostnames.some(newHostname => 
+        const domainsToDelete = existingDomains.filter(existing =>
+            !uniqueHostnames.some(newHostname =>
                 newHostname.toLowerCase() === existing.toLowerCase()
             )
         );
-        
+
         if (domainsToDelete.length > 0) {
             console.log(`Deleting ${domainsToDelete.length} old domains:`, domainsToDelete);
             const deleteStmt = env.DB.prepare("DELETE FROM domains WHERE hostname = ?");
             const deleteBatch = domainsToDelete.map(hostname => deleteStmt.bind(hostname));
             await env.DB.batch(deleteBatch);
         }
-        
+
         // Then, insert or replace domains in the new list
         // Set is_monitoring = 1 for all domains in the new list
         const stmt = env.DB.prepare("INSERT OR REPLACE INTO domains (id, hostname, url, is_monitoring, updated_at) VALUES (?, ?, ?, ?, ?)");
@@ -578,7 +588,7 @@ async function handleGetNextScanTime(
 ): Promise<Response> {
     try {
         const key = 'next_scan_time';
-        
+
         // Get from D1
         try {
             const result = await env.DB.prepare(
@@ -1115,7 +1125,7 @@ async function handleHTTPContentCheck(
 
             if (isHTML) {
                 const htmlContent = await httpResponse.text();
-                
+
                 // Check for MDES blocking page indicators
                 const blockedIndicators = [
                     'ถูกระงับ',
@@ -1127,7 +1137,7 @@ async function handleHTTPContentCheck(
                     'illegal acts',
                 ];
 
-                const isBlocked = blockedIndicators.some(indicator => 
+                const isBlocked = blockedIndicators.some(indicator =>
                     htmlContent.toLowerCase().includes(indicator.toLowerCase())
                 );
 
@@ -1183,11 +1193,11 @@ async function handleResultsStream(
     corsHeaders: Record<string, string>
 ): Promise<Response> {
     console.log('🔌 [SSE] New connection established');
-    
+
     const stream = new ReadableStream({
         async start(controller) {
             const encoder = new TextEncoder();
-            
+
             // Send initial connection message
             const send = (data: string) => {
                 try {
@@ -1203,7 +1213,7 @@ async function handleResultsStream(
             // Poll for new results every 1 second for real-time updates
             let lastCheckTime = Date.now();
             console.log(`🕐 [SSE] Starting poll from timestamp: ${lastCheckTime}`);
-            
+
             // Use recursive setTimeout instead of setInterval (more reliable in Workers)
             const poll = async () => {
                 try {
@@ -1260,11 +1270,11 @@ async function handleResultsStream(
                     console.error('SSE poll error:', error);
                     send(JSON.stringify({ type: 'error', message: error.message }));
                 }
-                
+
                 // Schedule next poll (recursive setTimeout)
                 setTimeout(poll, 1000);
             };
-            
+
             // Start polling
             poll();
 
@@ -1422,19 +1432,19 @@ async function handleSaveFrontendDomains(
 
         // Save to D1 (primary storage)
         // First, delete domains that are not in the new list
-        const domainsToDelete = existingDomains.filter(existing => 
-            !uniqueHostnames.some(newHostname => 
+        const domainsToDelete = existingDomains.filter(existing =>
+            !uniqueHostnames.some(newHostname =>
                 newHostname.toLowerCase() === existing.toLowerCase()
             )
         );
-        
+
         if (domainsToDelete.length > 0) {
             console.log(`[handleSaveFrontendDomains] Deleting ${domainsToDelete.length} old domains:`, domainsToDelete);
             const deleteStmt = env.DB.prepare("DELETE FROM domains WHERE hostname = ?");
             const deleteBatch = domainsToDelete.map(hostname => deleteStmt.bind(hostname));
             await env.DB.batch(deleteBatch);
         }
-        
+
         // Then, insert or replace domains in the new list
         const stmt = env.DB.prepare("INSERT OR REPLACE INTO domains (id, hostname, url, is_monitoring, telegram_chat_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)");
         const batch = uniqueHostnames.map(hostname => {
