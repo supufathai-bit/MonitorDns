@@ -1344,6 +1344,11 @@ export default function Home() {
 
         let isChecking = false; // Prevent concurrent checks
 
+        // Set initial next scan time immediately (fallback)
+        const intervalMs = settings.checkInterval * 60 * 1000;
+        const fallbackNextScan = Date.now() + intervalMs;
+        setNextScanTime(fallbackNextScan);
+
         // Get shared next scan time from Workers API
         const syncNextScanTime = async () => {
             try {
@@ -1354,30 +1359,31 @@ export default function Home() {
                         // Use shared next scan time
                         setNextScanTime(data.nextScanTime);
                         console.log(`📅 Using shared next scan time: ${new Date(data.nextScanTime).toLocaleString()}`);
-                    } else {
-                        // No shared time or expired, set new one
-                        const intervalMs = settings.checkInterval * 60 * 1000;
-                        const nextScan = Date.now() + intervalMs;
-                        setNextScanTime(nextScan);
-                        // Save to Workers API
-                        await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ nextScanTime: nextScan, checkInterval: settings.checkInterval }),
-                        });
-                        console.log(`📅 Set new shared next scan time: ${new Date(nextScan).toLocaleString()}`);
+                        return;
                     }
+                }
+                
+                // No shared time or expired, set new one
+                const nextScan = Date.now() + intervalMs;
+                setNextScanTime(nextScan);
+                // Save to Workers API
+                try {
+                    await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nextScanTime: nextScan, checkInterval: settings.checkInterval }),
+                    });
+                    console.log(`📅 Set new shared next scan time: ${new Date(nextScan).toLocaleString()}`);
+                } catch (saveError) {
+                    console.error('Error saving next scan time:', saveError);
                 }
             } catch (error) {
                 console.error('Error syncing next scan time:', error);
-                // Fallback to local timer
-                const intervalMs = settings.checkInterval * 60 * 1000;
-                const nextScan = Date.now() + intervalMs;
-                setNextScanTime(nextScan);
+                // Keep fallback time that was set above
             }
         };
 
-        // Sync immediately
+        // Sync immediately (but don't wait - we already set fallback)
         syncNextScanTime();
 
         // Check every 10 seconds if it's time to scan
