@@ -976,9 +976,23 @@ export default function Home() {
         await syncDomainsToWorkers(updatedDomains);
     };
 
-    const handleUpdateDomain = (id: string, updates: Partial<Domain>) => {
-        setDomains(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-        addLog(`Updated settings for ${domains.find(d => d.id === id)?.hostname}`, 'info');
+    const handleUpdateDomain = async (id: string, updates: Partial<Domain>) => {
+        const updatedDomains = domainsRef.current.map(d => d.id === id ? { ...d, ...updates } : d);
+        setDomains(updatedDomains);
+        
+        const updatedDomain = updatedDomains.find(d => d.id === id);
+        if (updatedDomain) {
+            addLog(`Updated settings for ${updatedDomain.hostname}`, 'info');
+            
+            // Sync immediately to D1 so all users see the same telegramChatId
+            try {
+                await syncDomainsToWorkers(updatedDomains);
+                console.log('✅ Domain settings synced to D1');
+            } catch (error) {
+                console.error('❌ Error syncing domain settings to D1:', error);
+                addLog('Failed to sync domain settings to D1', 'error');
+            }
+        }
     };
 
     const checkSingleDomain = useCallback(async (domainId: string) => {
