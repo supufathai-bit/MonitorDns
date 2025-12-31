@@ -351,7 +351,9 @@ export default function Home() {
         }
 
         // Connect to SSE stream
-        const eventSource = new EventSource(`${workersUrl.replace(/\/$/, '')}/api/results/stream`);
+        const sseUrl = `${workersUrl.replace(/\/$/, '')}/api/results/stream`;
+        console.log('🔌 [SSE] Connecting to:', sseUrl);
+        const eventSource = new EventSource(sseUrl);
 
         eventSource.onopen = () => {
             console.log('✅ [SSE] Connected to results stream');

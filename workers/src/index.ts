@@ -1056,19 +1056,28 @@ async function handleResultsStream(
     env: Env,
     corsHeaders: Record<string, string>
 ): Promise<Response> {
+    console.log('🔌 [SSE] New connection established');
+    
     const stream = new ReadableStream({
         async start(controller) {
             const encoder = new TextEncoder();
             
             // Send initial connection message
             const send = (data: string) => {
-                controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+                try {
+                    controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+                } catch (error) {
+                    console.error('SSE send error:', error);
+                }
             };
 
             send(JSON.stringify({ type: 'connected', message: 'SSE connection established' }));
+            console.log('✅ [SSE] Connection message sent');
 
             // Poll for new results every 1 second for real-time updates
             let lastCheckTime = Date.now();
+            console.log(`🕐 [SSE] Starting poll from timestamp: ${lastCheckTime}`);
+            
             const pollInterval = setInterval(async () => {
                 try {
                     // Get latest results from D1 (only newer than last check)
@@ -1077,6 +1086,7 @@ async function handleResultsStream(
                     ).bind(lastCheckTime);
 
                     const d1Result = await d1Query.all();
+                    console.log(`🔍 [SSE] Poll check: found ${d1Result.results?.length || 0} new results (checking after ${lastCheckTime})`);
 
                     if (d1Result.results && d1Result.results.length > 0) {
                         const formattedResults = d1Result.results.map((row: any) => {
@@ -1102,6 +1112,7 @@ async function handleResultsStream(
 
                         // Update last check time
                         const newLastCheckTime = Math.max(...formattedResults.map((r: any) => r.timestamp));
+                        console.log(`📤 [SSE] Sending ${formattedResults.length} new results to client (timestamps: ${formattedResults.map((r: any) => r.timestamp).join(', ')})`);
                         lastCheckTime = newLastCheckTime;
 
                         // Send new results to client immediately
@@ -1111,6 +1122,7 @@ async function handleResultsStream(
                             timestamp: Date.now(),
                             message: `New results from mobile app: ${formattedResults.length} updates`
                         }));
+                        console.log(`✅ [SSE] Results sent successfully`);
                     }
 
                     // Send heartbeat every 30 seconds
