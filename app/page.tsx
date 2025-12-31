@@ -328,13 +328,15 @@ export default function Home() {
                 } else {
                     addLog('No results found from mobile app', 'info');
                 }
-            } catch (error) {
-                console.error('Error loading results from Workers:', error);
-                addLog('Failed to load results from Workers API', 'error');
-            }
-        };
+        } catch (error) {
+            console.error('Error loading results from Workers:', error);
+            addLog('Failed to load results from Workers API', 'error');
+        }
+    }, [addLog]);
 
-        // Load immediately when component mounts
+    // Load results immediately when component mounts
+    useEffect(() => {
+        if (!loadedRef.current) return;
         loadResultsFromWorkers();
     }, [loadResultsFromWorkers]);
 
