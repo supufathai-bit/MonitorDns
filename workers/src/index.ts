@@ -1078,7 +1078,8 @@ async function handleResultsStream(
             let lastCheckTime = Date.now();
             console.log(`🕐 [SSE] Starting poll from timestamp: ${lastCheckTime}`);
             
-            const pollInterval = setInterval(async () => {
+            // Use recursive setTimeout instead of setInterval (more reliable in Workers)
+            const poll = async () => {
                 try {
                     // Get latest results from D1 (only newer than last check)
                     const d1Query = env.DB.prepare(
@@ -1133,11 +1134,17 @@ async function handleResultsStream(
                     console.error('SSE poll error:', error);
                     send(JSON.stringify({ type: 'error', message: error.message }));
                 }
-            }, 1000); // Poll every 1 second for near real-time updates
+                
+                // Schedule next poll (recursive setTimeout)
+                setTimeout(poll, 1000);
+            };
+            
+            // Start polling
+            poll();
 
             // Cleanup on close
             request.signal.addEventListener('abort', () => {
-                clearInterval(pollInterval);
+                console.log('🔌 [SSE] Connection closed by client');
                 controller.close();
             });
         },
