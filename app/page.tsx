@@ -161,7 +161,7 @@ export default function Home() {
 
     // Load results from Workers - make it a reusable callback
     const loadResultsFromWorkers = useCallback(async () => {
-            const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
 
             if (!workersUrl) {
                 console.log('Workers URL not configured, skipping results fetch');
