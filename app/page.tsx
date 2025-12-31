@@ -1058,37 +1058,24 @@ export default function Home() {
                                     // Find latest timestamp
                                     const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
 
-                                    return {
-                                        ...domain,
-                                        results: updatedResults,
-                                        lastCheck: latestTimestamp,
-                                    };
-                                }));
-
-                                // Check for blocked domains and send Telegram alerts
-                                const blockedDomains: Array<{ domain: Domain; isps: ISP[] }> = [];
-                                domainsRef.current.forEach(domain => {
-                                    const blockedISPs = Object.values(domain.results)
+                                    // Check for blocked ISPs and send Telegram alert for this domain
+                                    const blockedISPs = Object.values(updatedResults)
                                         .filter(r => r.status === Status.BLOCKED)
                                         .map(r => r.isp as ISP);
+                                    
                                     if (blockedISPs.length > 0) {
-                                        blockedDomains.push({ domain, isps: blockedISPs });
-                                    }
-                                });
+                                        addLog(`${domain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
 
-                                if (blockedDomains.length > 0) {
-                                    blockedDomains.forEach(({ domain, isps }) => {
-                                        addLog(`${domain.hostname} BLOCKED on ${isps.join(', ')}`, 'alert');
-
-                                        // Send Telegram alert if configured
+                                        // Send Telegram alert if configured - Use domain's custom chat ID if available
                                         const currentSettings = settingsRef.current;
                                         const targetChatId = domain.telegramChatId || currentSettings.telegramChatId;
 
                                         if (currentSettings.telegramBotToken && targetChatId) {
-                                            sendTelegramAlert(currentSettings.telegramBotToken, targetChatId, domain, isps)
+                                            sendTelegramAlert(currentSettings.telegramBotToken, targetChatId, domain, blockedISPs)
                                                 .then(sent => {
                                                     if (sent) {
-                                                        addLog(`Telegram alert sent for ${domain.hostname}`, 'success');
+                                                        const chatIdSource = domain.telegramChatId ? 'custom chat' : 'default chat';
+                                                        addLog(`Telegram alert sent for ${domain.hostname} to ${chatIdSource}`, 'success');
                                                     } else {
                                                         addLog(`Failed to send Telegram alert for ${domain.hostname}`, 'error');
                                                     }
@@ -1098,8 +1085,17 @@ export default function Home() {
                                                     addLog(`Error sending Telegram alert for ${domain.hostname}`, 'error');
                                                 });
                                         }
-                                    });
-                                } else {
+                                    }
+
+                                    return {
+                                        ...domain,
+                                        results: updatedResults,
+                                        lastCheck: latestTimestamp,
+                                    };
+                                }));
+
+                                // All domains updated, scan complete
+                                if (blockedDomains.length === 0) {
                                     addLog('All domains are active', 'success');
                                 }
 
