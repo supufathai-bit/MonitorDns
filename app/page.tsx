@@ -120,6 +120,7 @@ export default function Home() {
     // Load Data on Mount - Try Workers API first, fallback to localStorage
     useEffect(() => {
         if (typeof window !== 'undefined' && !loadedRef.current && isAuthenticated === true) {
+            console.log('🔄 [LoadData] Starting to load data, isAuthenticated:', isAuthenticated);
             const loadData = async () => {
                 try {
                     const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
