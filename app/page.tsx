@@ -340,8 +340,8 @@ export default function Home() {
         loadResultsFromWorkers();
     }, [loadResultsFromWorkers]);
 
-    // Adaptive polling for real-time results updates
-    // Uses smart polling: fast when active, slow when idle (saves D1 reads)
+    // Adaptive polling to check for new results from mobile app
+    // Only polls to detect when mobile app sends new results (doesn't trigger checks)
     useEffect(() => {
         if (!loadedRef.current) return;
 
@@ -351,16 +351,17 @@ export default function Home() {
             return;
         }
 
-        let lastCheckTime = Date.now();
-        let pollInterval = 3000; // Start with 3 seconds (saves D1 reads)
+        // Get initial lastCheckTime from current domains (to avoid fetching same results)
+        let lastCheckTime = Math.max(...domainsRef.current.map(d => d.lastCheck || 0), Date.now() - 60000); // Default to 1 minute ago
+        let pollInterval = 5000; // Start with 5 seconds (saves D1 reads)
         let consecutiveNoUpdates = 0; // Track consecutive polls with no updates
         
-        console.log('🔄 [Poll] Starting adaptive polling (starts at 3s, speeds up when active)');
-        addLog('Started real-time polling (adaptive interval)', 'info');
+        console.log('🔄 [Poll] Starting adaptive polling to detect mobile app results (starts at 5s)');
+        console.log(`🕐 [Poll] Initial lastCheckTime: ${lastCheckTime} (${new Date(lastCheckTime).toLocaleTimeString()})`);
 
         const poll = async () => {
             try {
-                // Check for new results
+                // Check for new results (only newer than lastCheckTime)
                 const response = await fetchResultsFromWorkers(workersUrl);
                 
                 if (response.success && response.results.length > 0) {
@@ -368,25 +369,30 @@ export default function Home() {
                     const latestResult = Math.max(...response.results.map(r => r.timestamp));
                     
                     if (latestResult > lastCheckTime) {
-                        console.log(`🔄 [Poll] Found new results! Latest timestamp: ${latestResult} (was: ${lastCheckTime})`);
-                        addLog(`📱 New results detected: ${response.results.length} updates`, 'success');
+                        console.log(`🔄 [Poll] Found NEW results! Latest timestamp: ${latestResult} (was: ${lastCheckTime})`);
+                        addLog(`📱 New results from mobile app: ${response.results.length} updates`, 'success');
                         lastCheckTime = latestResult;
                         consecutiveNoUpdates = 0;
-                        // Speed up polling when we find new results (1 second for next few polls)
-                        pollInterval = 1000;
+                        // Speed up polling when we find new results (2 seconds for next few polls)
+                        pollInterval = 2000;
                         // Load and update results immediately
                         await loadResultsFromWorkers();
                     } else {
                         // No new results - slow down polling gradually
                         consecutiveNoUpdates++;
-                        if (consecutiveNoUpdates > 5) {
-                            // After 5 consecutive polls with no updates, slow down to 5 seconds
+                        if (consecutiveNoUpdates > 3) {
+                            // After 3 consecutive polls with no updates, slow down to 10 seconds
+                            pollInterval = 10000;
+                        } else if (consecutiveNoUpdates > 1) {
+                            // After 1 consecutive poll, slow down to 5 seconds
                             pollInterval = 5000;
-                        } else if (consecutiveNoUpdates > 2) {
-                            // After 2 consecutive polls, slow down to 3 seconds
-                            pollInterval = 3000;
                         }
+                        // Silent - don't log every poll to avoid spam
                     }
+                } else {
+                    // No results at all - slow down
+                    consecutiveNoUpdates++;
+                    pollInterval = 10000;
                 }
             } catch (error) {
                 console.error('Poll error:', error);
@@ -396,8 +402,8 @@ export default function Home() {
             setTimeout(poll, pollInterval);
         };
 
-        // Start polling
-        poll();
+        // Start polling after a short delay
+        setTimeout(poll, 2000);
 
         return () => {
             clearInterval(pollInterval);
