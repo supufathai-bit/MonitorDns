@@ -159,10 +159,18 @@ async function handleMobileSync(
                         ispName = device_info?.isp || 'Unknown';
                     }
                     
-                    // Use mobile app's status directly
-                    // Logic: DNS resolution got IP = ACTIVE, no IP = BLOCKED
-                    // We trust mobile app's DNS check result
-                    const finalStatus = result.status;
+                    // Determine status based on IP address:
+                    // - If IP exists = ACTIVE (DNS resolution successful)
+                    // - If no IP = BLOCKED (DNS resolution failed)
+                    // This ensures consistency: got IP = ACTIVE, no IP = BLOCKED
+                    let finalStatus = result.status;
+                    if (result.ip && result.ip.trim() !== '') {
+                        // Got IP address = DNS resolution successful = ACTIVE
+                        finalStatus = 'ACTIVE';
+                    } else {
+                        // No IP address = DNS resolution failed = BLOCKED
+                        finalStatus = 'BLOCKED';
+                    }
                     
                     const resultId = `${result.hostname}:${ispName}:${device_id}`;
                     return d1Stmt.bind(
