@@ -232,10 +232,15 @@ export const DomainCard: React.FC<DomainCardProps> = ({ domain, onDelete, onRefr
                     <span className="mr-2">user@sentinel:~$</span>
                     <span className="text-gray-600 italic"># Run these on a VPS to verify blocks</span>
                 </div>
-                {Object.keys(domain.results).map((ispKey) => (
+                {Object.entries(domain.results)
+                  .filter(([key, result]) => {
+                    // Filter out GLOBAL and NT
+                    return result.isp !== ISP.GLOBAL && result.isp !== ISP.NT && key !== 'Global (Google)' && key !== 'NT';
+                  })
+                  .map(([ispKey, result]) => (
                     <div key={ispKey} className="py-0.5 whitespace-nowrap hover:bg-white/5 px-1 rounded cursor-text">
                         <span className="text-neon-blue/70 mr-2">$</span>
-                        {generateDigCommand(domain.hostname, ispKey as ISP)}
+                        {generateDigCommand(domain.hostname, result.isp)}
                     </div>
                 ))}
             </div>
