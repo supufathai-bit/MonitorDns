@@ -150,13 +150,17 @@ export const DomainCard: React.FC<DomainCardProps> = ({ domain, onDelete, onRefr
         </div>
       </div>
 
-      {/* Grid Badges */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
-        {Object.entries(domain.results).map(([key, result]) => {
+      {/* Grid Badges - Only show AIS, TRUE, and DTAC (removed GLOBAL and NT) */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        {Object.entries(domain.results)
+          .filter(([key, result]) => {
+            // Filter out GLOBAL and NT
+            return result.isp !== ISP.GLOBAL && result.isp !== ISP.NT && key !== 'Global (Google)' && key !== 'NT';
+          })
+          .map(([key, result]) => {
           // Get display name based on key (to distinguish True and DTAC)
           const displayName = key === 'DTAC' ? 'DTAC' : 
                             key === 'True' ? 'True' :
-                            result.isp === ISP.GLOBAL ? 'Global (Google)' : 
                             result.isp;
           
           const isBlocked = result.status === Status.BLOCKED;

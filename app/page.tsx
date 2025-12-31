@@ -27,15 +27,13 @@ const defaultSettings: AppSettings = {
 };
 
 const createEmptyResults = (): Record<ISP, ISPResult> => {
-    // Create separate slots for all ISPs (TRUE and DTAC are separate for UI clarity)
+    // Create slots only for AIS, TRUE, and DTAC (removed GLOBAL and NT - no SIM cards for these)
     // Note: ISP.TRUE and ISP.DTAC have same enum value ('True/DTAC'), so we need to use string keys
     const results: any = {
-        [ISP.GLOBAL]: { isp: ISP.GLOBAL, status: Status.PENDING },
         [ISP.AIS]: { isp: ISP.AIS, status: Status.PENDING },
         // Use string literal 'True' and 'DTAC' as keys to ensure separate slots
         'True': { isp: ISP.TRUE, status: Status.PENDING },
         'DTAC': { isp: ISP.DTAC, status: Status.PENDING },
-        [ISP.NT]: { isp: ISP.NT, status: Status.PENDING },
     };
     // Also set enum keys for compatibility
     results[ISP.TRUE] = results['True'];
