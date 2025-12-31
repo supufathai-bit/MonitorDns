@@ -55,6 +55,7 @@ export default function Home() {
     const domainsRef = useRef<Domain[]>([]);
     const settingsRef = useRef<AppSettings>(defaultSettings);
     const kvLimitExceededRef = useRef(false); // Track KV limit status
+    const nextScanTimeRef = useRef<number | null>(null); // Track nextScanTime without causing re-renders
 
     // Sync refs
     useEffect(() => { domainsRef.current = domains; }, [domains]);
@@ -1542,12 +1543,8 @@ export default function Home() {
         // Sync immediately (but don't wait - we already set fallback)
         syncNextScanTime();
 
-        // Use ref to track nextScanTime without causing re-renders
-        const nextScanTimeRef = useRef<number | null>(fallbackNextScan);
         // Update ref when nextScanTime changes (for display purposes)
-        useEffect(() => {
-            nextScanTimeRef.current = nextScanTime;
-        }, [nextScanTime]);
+        nextScanTimeRef.current = fallbackNextScan;
 
         // Check every 10 seconds if it's time to scan
         const checkInterval = setInterval(async () => {
