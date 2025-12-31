@@ -1095,7 +1095,7 @@ export default function Home() {
                                 }));
 
                                 // All domains updated, scan complete
-                                if (blockedDomains.length === 0) {
+                                if (!hasBlockedDomains) {
                                     addLog('All domains are active', 'success');
                                 }
 
