@@ -352,7 +352,8 @@ export default function Home() {
         }
 
         let lastCheckTime = Date.now();
-        console.log('🔄 [Poll] Starting fast polling for new results (every 2 seconds)');
+        console.log('🔄 [Poll] Starting fast polling for new results (every 1 second)');
+        addLog('Started real-time polling (1s interval)', 'info');
 
         const pollInterval = setInterval(async () => {
             try {
@@ -367,14 +368,14 @@ export default function Home() {
                         console.log(`🔄 [Poll] Found new results! Latest timestamp: ${latestResult} (was: ${lastCheckTime})`);
                         addLog(`📱 New results detected: ${response.results.length} updates`, 'success');
                         lastCheckTime = latestResult;
-                        // Load and update results
+                        // Load and update results immediately
                         await loadResultsFromWorkers();
                     }
                 }
             } catch (error) {
                 console.error('Poll error:', error);
             }
-        }, 2000); // Poll every 2 seconds
+        }, 1000); // Poll every 1 second for near real-time updates
 
         return () => {
             clearInterval(pollInterval);
