@@ -1420,6 +1420,9 @@ async function handleSaveFrontendDomains(
         // INSERT OR REPLACE will update existing records, so it's safe to always save
         // This ensures telegramChatId changes are always persisted to D1
 
+        // Get existing domains from D1 (needed to find domains to delete)
+        const existingDomains = await getDomainsFromD1(env);
+
         // Save to D1 (primary storage)
         // First, delete domains that are not in the new list
         const domainsToDelete = existingDomains.filter(existing =>
