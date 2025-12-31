@@ -1416,19 +1416,33 @@ export default function Home() {
                                 if (currentInterval > 0) {
                                     const intervalMs = currentInterval * 60 * 1000;
                                     const nextScan = Date.now() + intervalMs;
-                                    nextScanTimeRef.current = nextScan;
-                                    setNextScanTime(nextScan);
 
                                     // Save to Workers API (D1) - this is where we write nextScanTime
                                     try {
-                                        await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                                        const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
                                         });
-                                        console.log(`📅 Saved next scan time to D1 after manual scan: ${new Date(nextScan).toLocaleString()}`);
+                                        
+                                        if (saveResponse.ok) {
+                                            const saveData = await saveResponse.json();
+                                            // Use nextScanTime from response (confirmed saved to D1)
+                                            const confirmedNextScan = saveData.nextScanTime || nextScan;
+                                            nextScanTimeRef.current = confirmedNextScan;
+                                            setNextScanTime(confirmedNextScan);
+                                            console.log(`📅 Saved next scan time to D1 after manual scan: ${new Date(confirmedNextScan).toLocaleString()}`);
+                                        } else {
+                                            // Fallback to local time if save failed
+                                            nextScanTimeRef.current = nextScan;
+                                            setNextScanTime(nextScan);
+                                            console.error('Failed to save next scan time to D1, using local time');
+                                        }
                                     } catch (saveError) {
                                         console.error('Error saving next scan time to D1:', saveError);
+                                        // Fallback to local time on error
+                                        nextScanTimeRef.current = nextScan;
+                                        setNextScanTime(nextScan);
                                     }
                                 }
 
@@ -1595,19 +1609,33 @@ export default function Home() {
                 const currentInterval = settingsRef.current.checkInterval;
                 const intervalMs = currentInterval * 60 * 1000;
                 const nextScan = Date.now() + intervalMs;
-                nextScanTimeRef.current = nextScan;
-                setNextScanTime(nextScan);
 
                 // Save to Workers API (D1) - this is the ONLY place we write nextScanTime
                 try {
-                    await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                    const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
                     });
-                    console.log(`📅 Saved new shared next scan time to D1: ${new Date(nextScan).toLocaleString()}`);
+                    
+                    if (saveResponse.ok) {
+                        const saveData = await saveResponse.json();
+                        // Use nextScanTime from response (confirmed saved to D1)
+                        const confirmedNextScan = saveData.nextScanTime || nextScan;
+                        nextScanTimeRef.current = confirmedNextScan;
+                        setNextScanTime(confirmedNextScan);
+                        console.log(`📅 Saved new shared next scan time to D1: ${new Date(confirmedNextScan).toLocaleString()}`);
+                    } else {
+                        // Fallback to local time if save failed
+                        nextScanTimeRef.current = nextScan;
+                        setNextScanTime(nextScan);
+                        console.error('Failed to save next scan time to D1, using local time');
+                    }
                 } catch (error) {
                     console.error('Error saving next scan time to D1:', error);
+                    // Fallback to local time on error
+                    nextScanTimeRef.current = nextScan;
+                    setNextScanTime(nextScan);
                 }
 
                 isChecking = false;
