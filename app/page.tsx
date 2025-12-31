@@ -1320,27 +1320,116 @@ export default function Home() {
         }
     }, [loading, settings.checkInterval, domains.length]); // Dependencies
 
-    // Periodic Interval
+    // Shared auto-scan timer (sync with Workers API to avoid duplicate triggers)
     useEffect(() => {
-        if (settings.checkInterval <= 0) {
+        if (!loadedRef.current || settings.checkInterval <= 0) {
             setNextScanTime(null);
             return;
         }
 
-        // Calculate next scan time
-        const now = Date.now();
-        const intervalMs = settings.checkInterval * 60 * 1000;
-        const nextScan = now + intervalMs;
-        setNextScanTime(nextScan);
+        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+        if (!workersUrl) {
+            console.log('Workers URL not configured, using local timer');
+            // Fallback to local timer if Workers URL not configured
+            const intervalMs = settings.checkInterval * 60 * 1000;
+            const nextScan = Date.now() + intervalMs;
+            setNextScanTime(nextScan);
+            const intervalId = setInterval(() => {
+                addLog('Auto-scan interval reached', 'info');
+                runAllChecks();
+                setNextScanTime(Date.now() + intervalMs);
+            }, intervalMs);
+            return () => clearInterval(intervalId);
+        }
 
-        const intervalId = setInterval(() => {
-            addLog('Auto-scan interval reached', 'info');
-            runAllChecks();
-            // Update next scan time after each scan
-            setNextScanTime(Date.now() + intervalMs);
-        }, intervalMs);
-        return () => clearInterval(intervalId);
-    }, [settings.checkInterval, runAllChecks, addLog]);
+        let isChecking = false; // Prevent concurrent checks
+
+        // Get shared next scan time from Workers API
+        const syncNextScanTime = async () => {
+            try {
+                const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.nextScanTime && data.nextScanTime > Date.now()) {
+                        // Use shared next scan time
+                        setNextScanTime(data.nextScanTime);
+                        console.log(`📅 Using shared next scan time: ${new Date(data.nextScanTime).toLocaleString()}`);
+                    } else {
+                        // No shared time or expired, set new one
+                        const intervalMs = settings.checkInterval * 60 * 1000;
+                        const nextScan = Date.now() + intervalMs;
+                        setNextScanTime(nextScan);
+                        // Save to Workers API
+                        await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ nextScanTime: nextScan, checkInterval: settings.checkInterval }),
+                        });
+                        console.log(`📅 Set new shared next scan time: ${new Date(nextScan).toLocaleString()}`);
+                    }
+                }
+            } catch (error) {
+                console.error('Error syncing next scan time:', error);
+                // Fallback to local timer
+                const intervalMs = settings.checkInterval * 60 * 1000;
+                const nextScan = Date.now() + intervalMs;
+                setNextScanTime(nextScan);
+            }
+        };
+
+        // Sync immediately
+        syncNextScanTime();
+
+        // Check every 10 seconds if it's time to scan
+        const checkInterval = setInterval(async () => {
+            if (isChecking) return; // Prevent concurrent checks
+            
+            const currentNextScan = nextScanTime;
+            if (currentNextScan && Date.now() >= currentNextScan) {
+                isChecking = true;
+                
+                // Time to scan - check if someone else already triggered
+                try {
+                    const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.nextScanTime && data.nextScanTime > Date.now()) {
+                            // Someone else already updated, use their time
+                            setNextScanTime(data.nextScanTime);
+                            console.log('⏭️ Scan already triggered by another user, skipping');
+                            isChecking = false;
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking next scan time:', error);
+                }
+
+                // Trigger scan and update next scan time
+                addLog('Auto-scan interval reached', 'info');
+                await runAllChecks();
+                
+                const intervalMs = settings.checkInterval * 60 * 1000;
+                const nextScan = Date.now() + intervalMs;
+                setNextScanTime(nextScan);
+                
+                // Save to Workers API
+                try {
+                    await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nextScanTime: nextScan, checkInterval: settings.checkInterval }),
+                    });
+                } catch (error) {
+                    console.error('Error updating next scan time:', error);
+                }
+                
+                isChecking = false;
+            }
+        }, 10000); // Check every 10 seconds
+
+        return () => clearInterval(checkInterval);
+    }, [loadedRef.current, settings.checkInterval, runAllChecks, addLog, nextScanTime]);
 
     return (
         <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
