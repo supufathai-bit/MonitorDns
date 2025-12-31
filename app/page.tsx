@@ -535,11 +535,11 @@ export default function Home() {
             if (response.ok) {
                 const data = await response.json();
                 console.log('✅ Response data:', data);
-                addLog(`Successfully synced ${data.domains?.length || hostnames.length} domains to Workers API`, 'success');
-                console.log('✅ Domains synced to Workers:', data.domains || hostnames);
+                addLog(`Successfully synced ${domainsToSync.length} domains to Workers API`, 'success');
+                console.log('✅ Domains synced to Workers:', domainsToSync.map(d => d.hostname));
 
                 // Verify sync by fetching domains back
-                const verifyResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/mobile-sync/domains`);
+                const verifyResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/frontend/domains`);
                 if (verifyResponse.ok) {
                     const verifyData = await verifyResponse.json();
                     console.log('✅ Verified domains in Workers:', verifyData.domains);
@@ -549,8 +549,8 @@ export default function Home() {
                         return hostname.toLowerCase().replace(/^www\./, '');
                     };
                     
-                    const normalizedExpected = hostnames.map(normalizeHostname).sort();
-                    const normalizedGot = (verifyData.domains || []).map(normalizeHostname).sort();
+                    const normalizedExpected = domainsToSync.map(d => normalizeHostname(d.hostname)).sort();
+                    const normalizedGot = (verifyData.domains || []).map((d: any) => normalizeHostname(d.hostname || d)).sort();
                     
                     // Check if normalized hostnames match (ignore order and www prefix)
                     const expectedSet = new Set(normalizedExpected);
