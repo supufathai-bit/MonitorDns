@@ -89,15 +89,3 @@ export const generateDigCommand = (hostname: string, isp: ISP): string => {
     const server = ISP_DNS_SERVERS[isp];
     return `dig @${server} ${hostname} +short`;
 };
-};
-
-export const generateDigCommand = (hostname: string, isp: ISP): string => {
-    const server = ISP_DNS_SERVERS[isp];
-    return `dig @${server} ${hostname} +short`;
-};
-};
-
-export const generateDigCommand = (hostname: string, isp: ISP): string => {
-    const server = ISP_DNS_SERVERS[isp];
-    return `dig @${server} ${hostname} +short`;
-};

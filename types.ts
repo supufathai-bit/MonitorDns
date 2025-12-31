@@ -49,13 +49,3 @@ export interface LogEntry {
   message: string;
   type: 'info' | 'success' | 'error' | 'alert';
 }
-  id: string;
-  timestamp: number;
-  message: string;
-  type: 'info' | 'success' | 'error' | 'alert';
-}
-  id: string;
-  timestamp: number;
-  message: string;
-  type: 'info' | 'success' | 'error' | 'alert';
-}
