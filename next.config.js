@@ -11,11 +11,3 @@ const nextConfig = {
 };
 
 module.exports = nextConfig;
-  trailingSlash: false,
-};
-
-module.exports = nextConfig;
-  trailingSlash: false,
-};
-
-module.exports = nextConfig;
