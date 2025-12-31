@@ -1522,7 +1522,7 @@ export default function Home() {
         let isChecking = false; // Prevent concurrent checks
 
         // Get shared next scan time from Workers API (D1) - READ ONLY, DO NOT CREATE NEW ONE
-        // Only read from shared storage, don't write unless explicitly triggered (RUN FULL SCAN or auto-scan timer)
+        // Sync next scan time from shared storage, create new one if expired or missing
         const syncNextScanTime = async () => {
             try {
                 const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
@@ -1535,23 +1535,61 @@ export default function Home() {
                         console.log(`📅 Using shared next scan time from D1: ${new Date(data.nextScanTime).toLocaleString()}`);
                         return;
                     } else {
-                        // No shared time or expired - don't create new one, just set to null
-                        // Only auto-scan timer or manual trigger (RUN FULL SCAN) should create new nextScanTime
-                        nextScanTimeRef.current = null;
-                        setNextScanTime(null);
-                        console.log('📅 No shared next scan time in D1 (will be set when scan is triggered)');
+                        // No shared time or expired - create new one if checkInterval > 0
+                        const currentInterval = settingsRef.current.checkInterval;
+                        if (currentInterval > 0) {
+                            const intervalMs = currentInterval * 60 * 1000;
+                            const nextScan = Date.now() + intervalMs;
+                            nextScanTimeRef.current = nextScan;
+                            setNextScanTime(nextScan);
+                            
+                            // Save to Workers API (D1)
+                            try {
+                                await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
+                                });
+                                console.log(`📅 Created and saved new next scan time to D1: ${new Date(nextScan).toLocaleString()}`);
+                            } catch (saveError) {
+                                console.error('Error saving next scan time to D1:', saveError);
+                            }
+                        } else {
+                            // checkInterval is 0 or negative - set to null
+                            nextScanTimeRef.current = null;
+                            setNextScanTime(null);
+                            console.log('📅 Auto-scan is paused (checkInterval = 0)');
+                        }
                     }
                 } else {
-                    // API error - don't create new one
-                    nextScanTimeRef.current = null;
-                    setNextScanTime(null);
-                    console.log('📅 Failed to fetch next scan time from D1');
+                    // API error - try to create new one if checkInterval > 0
+                    const currentInterval = settingsRef.current.checkInterval;
+                    if (currentInterval > 0) {
+                        const intervalMs = currentInterval * 60 * 1000;
+                        const nextScan = Date.now() + intervalMs;
+                        nextScanTimeRef.current = nextScan;
+                        setNextScanTime(nextScan);
+                        console.log(`📅 Created local next scan time (API error): ${new Date(nextScan).toLocaleString()}`);
+                    } else {
+                        nextScanTimeRef.current = null;
+                        setNextScanTime(null);
+                    }
+                    console.log('📅 Failed to fetch next scan time from D1, using local time');
                 }
             } catch (error) {
                 console.error('Error syncing next scan time:', error);
-                // Don't create new one on error - just set to null
-                nextScanTimeRef.current = null;
-                setNextScanTime(null);
+                // Try to create new one if checkInterval > 0
+                const currentInterval = settingsRef.current.checkInterval;
+                if (currentInterval > 0) {
+                    const intervalMs = currentInterval * 60 * 1000;
+                    const nextScan = Date.now() + intervalMs;
+                    nextScanTimeRef.current = nextScan;
+                    setNextScanTime(nextScan);
+                    console.log(`📅 Created local next scan time (sync error): ${new Date(nextScan).toLocaleString()}`);
+                } else {
+                    nextScanTimeRef.current = null;
+                    setNextScanTime(null);
+                }
             }
         };
 
