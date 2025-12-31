@@ -1457,24 +1457,9 @@ export default function Home() {
             addLog('✅ KV limit check reset - Using D1 now (no write limits)', 'info');
         }
 
-        const intervalMs = settings.checkInterval * 60 * 1000;
-
-        // Check initially if overdue
-        const now = Date.now();
-        let oldestCheck = now;
-        domains.forEach(d => {
-            if (!d.lastCheck) oldestCheck = 0; // Never checked
-            else if (d.lastCheck < oldestCheck) oldestCheck = d.lastCheck;
-        });
-
-        if (now - oldestCheck >= intervalMs && !loading && settings.checkInterval > 0) {
-            // Debounce initial run to prevent double triggering on mount
-            const timer = setTimeout(() => {
-                addLog('Scheduled scan triggered', 'info');
-                runAllChecks();
-            }, 2000);
-            return () => clearTimeout(timer);
-        }
+        // Removed: Auto-trigger scan on mount
+        // Now we just load existing results from Workers API (D1) instead of triggering a new scan
+        // Users can manually trigger a scan using the "RUN FULL SCAN" button if needed
     }, [loading, settings.checkInterval, domains.length]); // Dependencies
 
     // Shared auto-scan timer (sync with Workers API to avoid duplicate triggers)
