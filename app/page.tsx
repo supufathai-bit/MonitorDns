@@ -875,6 +875,9 @@ export default function Home() {
                                 console.log('📊 All result hostnames:', response.results.map(r => r.hostname));
                                 console.log('📊 Current domains:', domainsRef.current.map(d => `${d.hostname} (normalized: ${normalizeHostname(d.hostname)})`));
 
+                                // Track if any domain is blocked
+                                let hasBlockedDomains = false;
+
                                 // Update domains with results
                                 setDomains(prev => prev.map(domain => {
                                     const normalizedDomainHostname = normalizeHostname(domain.hostname);
