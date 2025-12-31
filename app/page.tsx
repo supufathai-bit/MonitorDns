@@ -647,9 +647,9 @@ export default function Home() {
             }
         };
 
-        // Sync immediately, then every 30 seconds
+        // Sync immediately, then every 2 minutes (reduced from 30 seconds to save requests)
         syncFromWorkers();
-        const syncInterval = setInterval(syncFromWorkers, 30000);
+        const syncInterval = setInterval(syncFromWorkers, 120000);
 
         return () => clearInterval(syncInterval);
     }, [loadedRef.current]);
@@ -667,10 +667,10 @@ export default function Home() {
 
         // Get initial lastCheckTime from current domains (to avoid fetching same results)
         let lastCheckTime = Math.max(...domainsRef.current.map(d => d.lastCheck || 0), Date.now() - 60000); // Default to 1 minute ago
-        let pollInterval = 5000; // Start with 5 seconds (saves D1 reads)
+        let pollInterval = 30000; // Start with 30 seconds (reduced from 5 seconds to save requests)
         let consecutiveNoUpdates = 0; // Track consecutive polls with no updates
 
-        console.log('🔄 [Poll] Starting adaptive polling to detect mobile app results (starts at 5s)');
+        console.log('🔄 [Poll] Starting adaptive polling to detect mobile app results (starts at 30s)');
         console.log(`🕐 [Poll] Initial lastCheckTime: ${lastCheckTime} (${new Date(lastCheckTime).toLocaleTimeString()})`);
 
         const poll = async () => {
@@ -687,26 +687,26 @@ export default function Home() {
                         addLog(`📱 New results from mobile app: ${response.results.length} updates`, 'success');
                         lastCheckTime = latestResult;
                         consecutiveNoUpdates = 0;
-                        // Speed up polling when we find new results (2 seconds for next few polls)
-                        pollInterval = 2000;
+                        // Speed up polling when we find new results (10 seconds for next few polls)
+                        pollInterval = 10000;
                         // Load and update results immediately
                         await loadResultsFromWorkers();
                     } else {
                         // No new results - slow down polling gradually
                         consecutiveNoUpdates++;
-                        if (consecutiveNoUpdates > 3) {
-                            // After 3 consecutive polls with no updates, slow down to 10 seconds
-                            pollInterval = 10000;
+                        if (consecutiveNoUpdates > 2) {
+                            // After 2 consecutive polls with no updates, slow down to 60 seconds
+                            pollInterval = 60000;
                         } else if (consecutiveNoUpdates > 1) {
-                            // After 1 consecutive poll, slow down to 5 seconds
-                            pollInterval = 5000;
+                            // After 1 consecutive poll, slow down to 30 seconds
+                            pollInterval = 30000;
                         }
                         // Silent - don't log every poll to avoid spam
                     }
                 } else {
                     // No results at all - slow down
                     consecutiveNoUpdates++;
-                    pollInterval = 10000;
+                    pollInterval = 60000; // 60 seconds when no results
                 }
             } catch (error) {
                 console.error('Poll error:', error);
@@ -717,7 +717,7 @@ export default function Home() {
         };
 
         // Start polling after a short delay
-        setTimeout(poll, 2000);
+        setTimeout(poll, 5000);
 
         return () => {
             clearInterval(pollInterval);
@@ -747,33 +747,38 @@ export default function Home() {
     }, [loadedRef.current]);
 
     // Save Data on Change - Save to Workers API and localStorage
+    // Use debounce to avoid too many API calls when domains change frequently
     useEffect(() => {
         if (loadedRef.current) {
-            // Save to localStorage (backup)
+            // Save to localStorage immediately (backup)
             localStorage.setItem('sentinel_domains', JSON.stringify(domains));
 
-            // Save to Workers API (shared storage)
-            const saveToWorkers = async () => {
-                const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
-                if (workersUrl) {
-                    try {
-                        const response = await fetch(`${workersUrl}/api/frontend/domains`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ domains })
-                        });
-                        if (response.ok) {
-                            const data = await response.json();
-                            if (data.saved) {
-                                console.log('Domains saved to Workers:', domains.length);
+            // Debounce Workers API save (wait 2 seconds after last change)
+            const timeoutId = setTimeout(() => {
+                const saveToWorkers = async () => {
+                    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                    if (workersUrl) {
+                        try {
+                            const response = await fetch(`${workersUrl}/api/frontend/domains`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ domains })
+                            });
+                            if (response.ok) {
+                                const data = await response.json();
+                                if (data.saved) {
+                                    console.log('Domains saved to Workers:', domains.length);
+                                }
                             }
+                        } catch (error) {
+                            console.error('Failed to save domains to Workers:', error);
                         }
-                    } catch (error) {
-                        console.error('Failed to save domains to Workers:', error);
                     }
-                }
-            };
-            saveToWorkers();
+                };
+                saveToWorkers();
+            }, 2000); // Wait 2 seconds after last change
+
+            return () => clearTimeout(timeoutId);
         }
     }, [domains]);
 
