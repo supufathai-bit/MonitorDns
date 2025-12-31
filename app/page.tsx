@@ -7,7 +7,7 @@ import { sendTelegramAlert } from '../services/telegramService';
 import { fetchResultsFromWorkers, fetchDomainResults } from '../services/resultsService';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { DomainCard } from '../components/DomainCard';
-import { Plus, Activity, Terminal, Shield, Clock, Play } from 'lucide-react';
+import { Plus, Activity, Terminal, Shield, Clock, Play, LogOut } from 'lucide-react';
 import { DEFAULT_DOMAINS } from '../constants';
 
 // Helper to generate IDs
@@ -1890,20 +1890,51 @@ export default function Home() {
                         </div>
                     </div>
 
-                    <nav className="flex space-x-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
+                    <nav className="flex space-x-2 items-center">
+                        <div className="flex space-x-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
+                            <button
+                                onClick={() => setActiveTab('dashboard')}
+                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <Activity className="w-4 h-4 inline mr-2" />
+                                Dashboard
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('settings')}
+                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <Terminal className="w-4 h-4 inline mr-2" />
+                                Settings
+                            </button>
+                        </div>
                         <button
-                            onClick={() => setActiveTab('dashboard')}
-                            className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                            onClick={async () => {
+                                const token = localStorage.getItem('auth_token');
+                                if (token) {
+                                    try {
+                                        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                                        if (workersUrl) {
+                                            await fetch(`${workersUrl}/api/auth/logout`, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${token}`,
+                                                    'Content-Type': 'application/json',
+                                                },
+                                            });
+                                        }
+                                    } catch (error) {
+                                        console.error('Logout error:', error);
+                                    }
+                                }
+                                localStorage.removeItem('auth_token');
+                                localStorage.removeItem('auth_user');
+                                window.location.href = '/login';
+                            }}
+                            className="ml-2 px-4 py-2 rounded text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all flex items-center gap-2"
+                            title="Logout"
                         >
-                            <Activity className="w-4 h-4 inline mr-2" />
-                            Dashboard
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('settings')}
-                            className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
-                        >
-                            <Terminal className="w-4 h-4 inline mr-2" />
-                            Settings
+                            <LogOut className="w-4 h-4" />
+                            <span>Logout</span>
                         </button>
                     </nav>
                 </div>
