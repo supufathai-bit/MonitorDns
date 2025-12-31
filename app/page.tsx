@@ -1504,6 +1504,7 @@ export default function Home() {
         // Set initial next scan time immediately (fallback)
         const intervalMs = settings.checkInterval * 60 * 1000;
         const fallbackNextScan = Date.now() + intervalMs;
+        nextScanTimeRef.current = fallbackNextScan;
         setNextScanTime(fallbackNextScan);
 
         // Get shared next scan time from Workers API
@@ -1514,6 +1515,7 @@ export default function Home() {
                     const data = await response.json();
                     if (data.nextScanTime && data.nextScanTime > Date.now()) {
                         // Use shared next scan time
+                        nextScanTimeRef.current = data.nextScanTime;
                         setNextScanTime(data.nextScanTime);
                         console.log(`📅 Using shared next scan time: ${new Date(data.nextScanTime).toLocaleString()}`);
                         return;
@@ -1522,6 +1524,7 @@ export default function Home() {
                 
                 // No shared time or expired, set new one
                 const nextScan = Date.now() + intervalMs;
+                nextScanTimeRef.current = nextScan;
                 setNextScanTime(nextScan);
                 // Save to Workers API
                 try {
