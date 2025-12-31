@@ -8,15 +8,31 @@ export const sendTelegramAlert = async (
 ): Promise<boolean> => {
   if (!botToken || !chatId) return false;
 
-  const ispList = failedISPs.map(isp => `• ${isp}`).join('\n');
-  
+  // แสดงเฉพาะ AIS, True, DTAC พร้อม emoji
+  const ispStatusList = [
+    { isp: ISP.AIS, name: 'AIS' },
+    { isp: ISP.TRUE, name: 'True' },
+    { isp: ISP.DTAC, name: 'DTAC' },
+  ].map(({ isp, name }) => {
+    const result = domain.results[isp];
+    const status = result?.status || Status.PENDING;
+
+    if (status === Status.BLOCKED) {
+      return `🚫 ${name}`;
+    } else if (status === Status.ACTIVE) {
+      return `✅ ${name}`;
+    } else {
+      return `⏳ ${name}`;
+    }
+  }).join('\n');
+
   const message = `
 🚨 <b>DOMAIN ALERT</b> 🚨
 
 <b>Domain:</b> ${domain.hostname}
 <b>Status:</b> BLOCKED / UNREACHABLE
 <b>Detected on:</b>
-${ispList}
+${ispStatusList}
 
 <i>Please check the dashboard for more details.</i>
 `;
