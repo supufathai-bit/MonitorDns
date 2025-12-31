@@ -244,12 +244,152 @@ export default function Home() {
                     }
                 } finally {
                     loadedRef.current = true;
+                    // Load results immediately after domains and settings are loaded
+                    // This ensures we show the latest scan results when the page first loads
+                    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                    if (workersUrl) {
+                        // Use setTimeout to ensure state updates are complete
+                        setTimeout(async () => {
+                            try {
+                                addLog('Loading latest scan results...', 'info');
+                                const response = await fetchResultsFromWorkers(workersUrl);
+                                
+                                if (response.success && response.results.length > 0) {
+                                    addLog(`Loaded ${response.results.length} latest results from D1`, 'success');
+                                    
+                                    // Normalize hostname for matching
+                                    const normalizeHostname = (hostname: string): string => {
+                                        return hostname.toLowerCase().replace(/^www\./, '');
+                                    };
+                                    
+                                    // Group results by normalized hostname
+                                    const resultsByHostname = new Map<string, typeof response.results>();
+                                    response.results.forEach(result => {
+                                        const normalized = normalizeHostname(result.hostname);
+                                        if (!resultsByHostname.has(normalized)) {
+                                            resultsByHostname.set(normalized, []);
+                                        }
+                                        resultsByHostname.get(normalized)!.push(result);
+                                    });
+                                    
+                                    // Update domains with results
+                                    setDomains(prev => prev.map(domain => {
+                                        const normalizedDomainHostname = normalizeHostname(domain.hostname);
+                                        const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
+                                        
+                                        if (!hostnameResults || hostnameResults.length === 0) {
+                                            return domain;
+                                        }
+                                        
+                                        // Map ISP names
+                                        const ispMap: Record<string, ISP> = {
+                                            'Unknown': ISP.AIS,
+                                            'unknown': ISP.AIS,
+                                            'AIS': ISP.AIS,
+                                            'True': ISP.TRUE,
+                                            'TRUE': ISP.TRUE,
+                                            'true': ISP.TRUE,
+                                            'DTAC': ISP.TRUE,
+                                            'dtac': ISP.TRUE,
+                                            'NT': ISP.NT,
+                                            'nt': ISP.NT,
+                                            'Global (Google)': ISP.GLOBAL,
+                                            'Global': ISP.GLOBAL,
+                                        };
+                                        
+                                        // Group results by mapped ISP and get best result for each ISP
+                                        const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
+                                        hostnameResults.forEach(workerResult => {
+                                            const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
+                                            const existing = resultsByMappedISP.get(mappedISP);
+                                            
+                                            if (!existing) {
+                                                resultsByMappedISP.set(mappedISP, workerResult);
+                                            } else {
+                                                // Priority: 1) BLOCKED, 2) ISP name clarity, 3) Latest timestamp
+                                                if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
+                                                    resultsByMappedISP.set(mappedISP, workerResult);
+                                                } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
+                                                    // Keep existing BLOCKED
+                                                } else {
+                                                    const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
+                                                    const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
+                                                    
+                                                    if (!newIsUnknown && existingIsUnknown) {
+                                                        resultsByMappedISP.set(mappedISP, workerResult);
+                                                    } else if (!newIsUnknown && !existingIsUnknown) {
+                                                        const existingTimestamp = existing.timestamp || 0;
+                                                        const newTimestamp = workerResult.timestamp || 0;
+                                                        if (newTimestamp > existingTimestamp) {
+                                                            resultsByMappedISP.set(mappedISP, workerResult);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        });
+                                        
+                                        // Convert Workers results to ISPResult format
+                                        const updatedResults = { ...domain.results };
+                                        resultsByMappedISP.forEach((workerResult, isp) => {
+                                            const ispName = workerResult.isp_name;
+                                            const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
+                                                ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
+                                            
+                                            if (isTrueOrDTAC) {
+                                                const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
+                                                slots.forEach(slotKey => {
+                                                    if (updatedResults[slotKey]) {
+                                                        updatedResults[slotKey] = {
+                                                            isp: slotKey === 'True' ? ISP.TRUE : slotKey === 'DTAC' ? ISP.DTAC : slotKey,
+                                                            status: workerResult.status as Status,
+                                                            ip: workerResult.ip || '',
+                                                            latency: workerResult.latency || 0,
+                                                            details: `From D1 (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                            source: 'server',
+                                                            deviceId: workerResult.device_id,
+                                                            timestamp: workerResult.timestamp,
+                                                        };
+                                                    }
+                                                });
+                                            } else {
+                                                if (updatedResults[isp]) {
+                                                    updatedResults[isp] = {
+                                                        isp: isp,
+                                                        status: workerResult.status as Status,
+                                                        ip: workerResult.ip || '',
+                                                        latency: workerResult.latency || 0,
+                                                        details: `From D1 (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                        source: 'd1',
+                                                        deviceId: workerResult.device_id,
+                                                        timestamp: workerResult.timestamp,
+                                                    };
+                                                }
+                                            }
+                                        });
+                                        
+                                        const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
+                                        
+                                        return {
+                                            ...domain,
+                                            results: updatedResults,
+                                            lastCheck: latestTimestamp,
+                                        };
+                                    }));
+                                } else {
+                                    addLog('No previous scan results found', 'info');
+                                }
+                            } catch (error) {
+                                console.error('Error loading results on mount:', error);
+                                addLog('Failed to load previous scan results', 'error');
+                            }
+                        }, 100);
+                    }
                 }
             };
 
             loadData();
         }
-    }, []);
+    }, [addLog]);
 
     // Load results from Workers - make it a reusable callback
     const loadResultsFromWorkers = useCallback(async () => {
@@ -1424,7 +1564,7 @@ export default function Home() {
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
                                         });
-                                        
+
                                         if (saveResponse.ok) {
                                             const saveData = await saveResponse.json();
                                             // Use nextScanTime from response (confirmed saved to D1)
@@ -1617,7 +1757,7 @@ export default function Home() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
                     });
-                    
+
                     if (saveResponse.ok) {
                         const saveData = await saveResponse.json();
                         // Use nextScanTime from response (confirmed saved to D1)
