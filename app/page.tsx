@@ -253,15 +253,15 @@ export default function Home() {
                             try {
                                 addLog('Loading latest scan results...', 'info');
                                 const response = await fetchResultsFromWorkers(workersUrl);
-                                
+
                                 if (response.success && response.results.length > 0) {
                                     addLog(`Loaded ${response.results.length} latest results from D1`, 'success');
-                                    
+
                                     // Normalize hostname for matching
                                     const normalizeHostname = (hostname: string): string => {
                                         return hostname.toLowerCase().replace(/^www\./, '');
                                     };
-                                    
+
                                     // Group results by normalized hostname
                                     const resultsByHostname = new Map<string, typeof response.results>();
                                     response.results.forEach(result => {
@@ -271,16 +271,16 @@ export default function Home() {
                                         }
                                         resultsByHostname.get(normalized)!.push(result);
                                     });
-                                    
+
                                     // Update domains with results
                                     setDomains(prev => prev.map(domain => {
                                         const normalizedDomainHostname = normalizeHostname(domain.hostname);
                                         const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
-                                        
+
                                         if (!hostnameResults || hostnameResults.length === 0) {
                                             return domain;
                                         }
-                                        
+
                                         // Map ISP names
                                         const ispMap: Record<string, ISP> = {
                                             'Unknown': ISP.AIS,
@@ -296,13 +296,13 @@ export default function Home() {
                                             'Global (Google)': ISP.GLOBAL,
                                             'Global': ISP.GLOBAL,
                                         };
-                                        
+
                                         // Group results by mapped ISP and get best result for each ISP
                                         const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
                                         hostnameResults.forEach(workerResult => {
                                             const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
                                             const existing = resultsByMappedISP.get(mappedISP);
-                                            
+
                                             if (!existing) {
                                                 resultsByMappedISP.set(mappedISP, workerResult);
                                             } else {
@@ -314,7 +314,7 @@ export default function Home() {
                                                 } else {
                                                     const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
                                                     const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
-                                                    
+
                                                     if (!newIsUnknown && existingIsUnknown) {
                                                         resultsByMappedISP.set(mappedISP, workerResult);
                                                     } else if (!newIsUnknown && !existingIsUnknown) {
@@ -327,14 +327,14 @@ export default function Home() {
                                                 }
                                             }
                                         });
-                                        
+
                                         // Convert Workers results to ISPResult format
                                         const updatedResults = { ...domain.results };
                                         resultsByMappedISP.forEach((workerResult, isp) => {
                                             const ispName = workerResult.isp_name;
                                             const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
                                                 ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
-                                            
+
                                             if (isTrueOrDTAC) {
                                                 const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
                                                 slots.forEach(slotKey => {
@@ -366,9 +366,9 @@ export default function Home() {
                                                 }
                                             }
                                         });
-                                        
+
                                         const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
-                                        
+
                                         return {
                                             ...domain,
                                             results: updatedResults,
@@ -1913,7 +1913,7 @@ export default function Home() {
                                             <span className="text-gray-200 font-mono flex items-center">
                                                 <Clock className="w-3 h-3 mr-1 text-gray-500" />
                                                 {settings.checkInterval > 0 && nextScanTime
-                                                    ? new Date(nextScanTime).toLocaleTimeString()
+                                                    ? new Date(nextScanTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
                                                     : 'Paused'}
                                             </span>
                                         </div>
