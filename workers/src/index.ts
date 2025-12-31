@@ -1449,11 +1449,37 @@ async function handleSaveFrontendDomains(
         const stmt = env.DB.prepare("INSERT OR REPLACE INTO domains (id, hostname, url, is_monitoring, telegram_chat_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)");
         const batch = uniqueHostnames.map(hostname => {
             const domainObj = domains.find((d: any) => {
-                const h = typeof d === 'string' ? d : (d.hostname || d.url || String(d));
-                return h.replace(/^www\./i, '').toLowerCase() === hostname;
+                if (typeof d === 'string') {
+                    const normalized = d.replace(/^www\./i, '').toLowerCase();
+                    return normalized === hostname;
+                }
+                // Try to match by hostname first
+                if (d.hostname) {
+                    const normalized = d.hostname.replace(/^www\./i, '').toLowerCase();
+                    if (normalized === hostname) return true;
+                }
+                // Try to match by url
+                if (d.url) {
+                    try {
+                        const url = new URL(d.url.startsWith('http') ? d.url : `https://${d.url}`);
+                        const normalized = url.hostname.replace(/^www\./i, '').toLowerCase();
+                        if (normalized === hostname) return true;
+                    } catch {
+                        const normalized = d.url.replace(/^www\./i, '').toLowerCase();
+                        if (normalized === hostname) return true;
+                    }
+                }
+                return false;
             });
+            
             const url = typeof domainObj === 'string' ? domainObj : (domainObj?.url || hostname);
-            const telegramChatId = typeof domainObj === 'object' ? (domainObj.telegramChatId || null) : null;
+            const telegramChatId = typeof domainObj === 'object' && domainObj !== null ? (domainObj.telegramChatId || null) : null;
+            
+            // Log for debugging
+            if (telegramChatId) {
+                console.log(`[handleSaveFrontendDomains] Saving telegramChatId for ${hostname}: ${telegramChatId}`);
+            }
+            
             return stmt.bind(hostname, hostname, url, 1, telegramChatId, Date.now());
         });
         await env.DB.batch(batch);
