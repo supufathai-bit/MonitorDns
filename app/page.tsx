@@ -736,12 +736,39 @@ export default function Home() {
 
                                     if (blockedISPs.length > 0) {
                                         addLog(`${currentDomain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
-                                        const targetChatId = currentDomain.telegramChatId || currentSettings.telegramChatId;
-                                        if (currentSettings.telegramBotToken && targetChatId) {
-                                            sendTelegramAlert(currentSettings.telegramBotToken, targetChatId, currentDomain, blockedISPs)
-                                                .then(sent => {
-                                                    if (sent) addLog(`Telegram alert sent`, 'success');
-                                                });
+                                        
+                                        // Send Telegram alert to both chat IDs:
+                                        // 1. Domain's custom chat ID (ห้องแยกแต่ละลิงก์)
+                                        // 2. Settings chat ID (ห้องรวม)
+                                        const chatIdsToSend: string[] = [];
+                                        
+                                        // Add domain's custom chat ID if available
+                                        if (currentDomain.telegramChatId) {
+                                            chatIdsToSend.push(currentDomain.telegramChatId);
+                                        }
+                                        
+                                        // Add settings chat ID (ห้องรวม) if available and different from domain chat ID
+                                        if (currentSettings.telegramChatId && currentSettings.telegramChatId !== currentDomain.telegramChatId) {
+                                            chatIdsToSend.push(currentSettings.telegramChatId);
+                                        }
+
+                                        if (currentSettings.telegramBotToken && chatIdsToSend.length > 0) {
+                                            // Send to all chat IDs
+                                            Promise.all(chatIdsToSend.map(chatId => 
+                                                sendTelegramAlert(currentSettings.telegramBotToken, chatId, currentDomain, blockedISPs)
+                                                    .then(sent => ({ chatId, sent }))
+                                                    .catch(error => ({ chatId, sent: false, error }))
+                                            )).then(results => {
+                                                const successCount = results.filter(r => r.sent).length;
+                                                if (successCount > 0) {
+                                                    const chatIdSources = results.filter(r => r.sent).map(r => 
+                                                        r.chatId === currentDomain.telegramChatId ? 'custom chat' : 'default chat'
+                                                    );
+                                                    addLog(`Telegram alert sent to ${chatIdSources.join(' and ')}`, 'success');
+                                                }
+                                            }).catch(error => {
+                                                console.error('Error sending Telegram alerts:', error);
+                                            });
                                         }
                                     } else {
                                         addLog(`${currentDomain.hostname}: Check complete`, 'success');
@@ -1067,26 +1094,49 @@ export default function Home() {
                                         .map(r => r.isp as ISP);
                                     
                                     if (blockedISPs.length > 0) {
+                                        hasBlockedDomains = true;
                                         addLog(`${domain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
 
-                                        // Send Telegram alert if configured - Use domain's custom chat ID if available
+                                        // Send Telegram alert to both chat IDs:
+                                        // 1. Domain's custom chat ID (ห้องแยกแต่ละลิงก์)
+                                        // 2. Settings chat ID (ห้องรวม)
                                         const currentSettings = settingsRef.current;
-                                        const targetChatId = domain.telegramChatId || currentSettings.telegramChatId;
+                                        const chatIdsToSend: string[] = [];
+                                        
+                                        // Add domain's custom chat ID if available
+                                        if (domain.telegramChatId) {
+                                            chatIdsToSend.push(domain.telegramChatId);
+                                        }
+                                        
+                                        // Add settings chat ID (ห้องรวม) if available and different from domain chat ID
+                                        if (currentSettings.telegramChatId && currentSettings.telegramChatId !== domain.telegramChatId) {
+                                            chatIdsToSend.push(currentSettings.telegramChatId);
+                                        }
 
-                                        if (currentSettings.telegramBotToken && targetChatId) {
-                                            sendTelegramAlert(currentSettings.telegramBotToken, targetChatId, domain, blockedISPs)
-                                                .then(sent => {
-                                                    if (sent) {
-                                                        const chatIdSource = domain.telegramChatId ? 'custom chat' : 'default chat';
-                                                        addLog(`Telegram alert sent for ${domain.hostname} to ${chatIdSource}`, 'success');
-                                                    } else {
-                                                        addLog(`Failed to send Telegram alert for ${domain.hostname}`, 'error');
-                                                    }
-                                                })
-                                                .catch(error => {
-                                                    console.error('Error sending Telegram alert:', error);
-                                                    addLog(`Error sending Telegram alert for ${domain.hostname}`, 'error');
-                                                });
+                                        if (currentSettings.telegramBotToken && chatIdsToSend.length > 0) {
+                                            // Send to all chat IDs
+                                            Promise.all(chatIdsToSend.map(chatId => 
+                                                sendTelegramAlert(currentSettings.telegramBotToken, chatId, domain, blockedISPs)
+                                                    .then(sent => ({ chatId, sent }))
+                                                    .catch(error => ({ chatId, sent: false, error }))
+                                            )).then(results => {
+                                                const successCount = results.filter(r => r.sent).length;
+                                                const failedCount = results.length - successCount;
+                                                
+                                                if (successCount > 0) {
+                                                    const chatIdSources = results.filter(r => r.sent).map(r => 
+                                                        r.chatId === domain.telegramChatId ? 'custom chat' : 'default chat'
+                                                    );
+                                                    addLog(`Telegram alert sent for ${domain.hostname} to ${chatIdSources.join(' and ')}`, 'success');
+                                                }
+                                                
+                                                if (failedCount > 0) {
+                                                    addLog(`Failed to send Telegram alert for ${domain.hostname} to ${failedCount} chat(s)`, 'error');
+                                                }
+                                            }).catch(error => {
+                                                console.error('Error sending Telegram alerts:', error);
+                                                addLog(`Error sending Telegram alerts for ${domain.hostname}`, 'error');
+                                            });
                                         }
                                     }
 
