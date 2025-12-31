@@ -680,16 +680,6 @@ async function handleUpdateNextScanTime(
     }
 }
 
-    } catch (error: any) {
-        console.error('Update domains error:', error);
-        return jsonResponse(
-            { error: error.message || 'Internal server error' },
-            500,
-            corsHeaders
-        );
-    }
-}
-
 // Trigger mobile app to check DNS (for frontend)
 async function handleTriggerCheck(
     request: Request,
