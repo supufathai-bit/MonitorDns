@@ -373,8 +373,9 @@ async function handleMobileSync(
 // Helper: Get domains from D1
 async function getDomainsFromD1(env: Env): Promise<string[]> {
     try {
+        // Get all domains (is_monitoring = 1 or NULL, since old records might not have this field)
         const result = await env.DB.prepare(
-            "SELECT hostname FROM domains WHERE is_monitoring = 1 ORDER BY hostname"
+            "SELECT hostname FROM domains WHERE is_monitoring = 1 OR is_monitoring IS NULL ORDER BY hostname"
         ).all();
 
         return result.results.map((row: any) => row.hostname);
