@@ -1050,6 +1050,95 @@ async function handleHTTPContentCheck(
     }
 }
 
+// Server-Sent Events (SSE) for real-time results updates
+async function handleResultsStream(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    const stream = new ReadableStream({
+        async start(controller) {
+            const encoder = new TextEncoder();
+            
+            // Send initial connection message
+            const send = (data: string) => {
+                controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+            };
+
+            send(JSON.stringify({ type: 'connected', message: 'SSE connection established' }));
+
+            // Poll for new results every 5 seconds
+            let lastCheckTime = Date.now();
+            const pollInterval = setInterval(async () => {
+                try {
+                    // Get latest results from D1
+                    const d1Query = env.DB.prepare(
+                        "SELECT r1.* FROM results r1 INNER JOIN (SELECT hostname, isp_name, MAX(timestamp) as max_timestamp FROM results GROUP BY hostname, isp_name) r2 ON r1.hostname = r2.hostname AND r1.isp_name = r2.isp_name AND r1.timestamp = r2.max_timestamp WHERE r1.timestamp > ? ORDER BY r1.timestamp DESC"
+                    ).bind(lastCheckTime);
+
+                    const d1Result = await d1Query.all();
+
+                    if (d1Result.results && d1Result.results.length > 0) {
+                        const formattedResults = d1Result.results.map((row: any) => {
+                            let deviceInfo = {};
+                            try {
+                                deviceInfo = JSON.parse(row.device_info || '{}');
+                            } catch {
+                                deviceInfo = {};
+                            }
+
+                            return {
+                                hostname: row.hostname,
+                                isp_name: row.isp_name,
+                                status: row.status,
+                                ip: row.ip,
+                                latency: row.latency,
+                                device_id: row.device_id,
+                                device_info: deviceInfo,
+                                timestamp: row.timestamp,
+                                source: row.source || 'mobile-app',
+                            };
+                        });
+
+                        // Update last check time
+                        lastCheckTime = Math.max(...formattedResults.map((r: any) => r.timestamp));
+
+                        // Send new results to client
+                        send(JSON.stringify({
+                            type: 'results',
+                            results: formattedResults,
+                            timestamp: Date.now()
+                        }));
+                    }
+
+                    // Send heartbeat every 30 seconds
+                    if (Date.now() % 30000 < 5000) {
+                        send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }));
+                    }
+                } catch (error: any) {
+                    console.error('SSE poll error:', error);
+                    send(JSON.stringify({ type: 'error', message: error.message }));
+                }
+            }, 5000); // Poll every 5 seconds
+
+            // Cleanup on close
+            request.signal.addEventListener('abort', () => {
+                clearInterval(pollInterval);
+                controller.close();
+            });
+        },
+    });
+
+    return new Response(stream, {
+        headers: {
+            ...corsHeaders,
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+        },
+    });
+}
+
 // Frontend Domains API - Get domains from D1 (primary) or KV (fallback)
 async function handleGetFrontendDomains(
     request: Request,

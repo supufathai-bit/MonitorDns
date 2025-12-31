@@ -159,11 +159,8 @@ export default function Home() {
         }
     }, []);
 
-    // Load results from Workers immediately after data is loaded
-    useEffect(() => {
-        if (!loadedRef.current) return;
-
-        const loadResultsFromWorkers = async () => {
+    // Load results from Workers - make it a reusable callback
+    const loadResultsFromWorkers = useCallback(async () => {
             const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
 
             if (!workersUrl) {
@@ -339,7 +336,57 @@ export default function Home() {
 
         // Load immediately when component mounts
         loadResultsFromWorkers();
-    }, [loadedRef.current, addLog]);
+    }, [loadResultsFromWorkers]);
+
+    // Server-Sent Events (SSE) for real-time results updates
+    useEffect(() => {
+        if (!loadedRef.current) return;
+
+        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+        if (!workersUrl) {
+            console.log('Workers URL not configured, skipping SSE connection');
+            return;
+        }
+
+        // Connect to SSE stream
+        const eventSource = new EventSource(`${workersUrl.replace(/\/$/, '')}/api/results/stream`);
+
+        eventSource.onopen = () => {
+            console.log('✅ [SSE] Connected to results stream');
+            addLog('Connected to real-time updates', 'success');
+        };
+
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'connected') {
+                    console.log('✅ [SSE]', data.message);
+                } else if (data.type === 'results' && data.results && data.results.length > 0) {
+                    console.log('🔄 [SSE] Received new results:', data.results.length);
+                    // Trigger loadResultsFromWorkers to update UI with new results
+                    loadResultsFromWorkers();
+                } else if (data.type === 'heartbeat') {
+                    // Just keep connection alive
+                    console.log('💓 [SSE] Heartbeat');
+                } else if (data.type === 'error') {
+                    console.error('❌ [SSE] Error:', data.message);
+                }
+            } catch (error) {
+                console.error('Error parsing SSE message:', error);
+            }
+        };
+
+        eventSource.onerror = (error) => {
+            console.error('SSE connection error:', error);
+            // EventSource will automatically reconnect
+        };
+
+        return () => {
+            eventSource.close();
+            console.log('🔌 [SSE] Disconnected from results stream');
+        };
+    }, [loadedRef.current, loadResultsFromWorkers, addLog]);
 
     // Sync domains to Workers when component mounts (initial sync only)
     useEffect(() => {
