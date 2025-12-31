@@ -1067,11 +1067,11 @@ async function handleResultsStream(
 
             send(JSON.stringify({ type: 'connected', message: 'SSE connection established' }));
 
-            // Poll for new results every 5 seconds
+            // Poll for new results every 1 second for real-time updates
             let lastCheckTime = Date.now();
             const pollInterval = setInterval(async () => {
                 try {
-                    // Get latest results from D1
+                    // Get latest results from D1 (only newer than last check)
                     const d1Query = env.DB.prepare(
                         "SELECT r1.* FROM results r1 INNER JOIN (SELECT hostname, isp_name, MAX(timestamp) as max_timestamp FROM results GROUP BY hostname, isp_name) r2 ON r1.hostname = r2.hostname AND r1.isp_name = r2.isp_name AND r1.timestamp = r2.max_timestamp WHERE r1.timestamp > ? ORDER BY r1.timestamp DESC"
                     ).bind(lastCheckTime);
@@ -1101,25 +1101,27 @@ async function handleResultsStream(
                         });
 
                         // Update last check time
-                        lastCheckTime = Math.max(...formattedResults.map((r: any) => r.timestamp));
+                        const newLastCheckTime = Math.max(...formattedResults.map((r: any) => r.timestamp));
+                        lastCheckTime = newLastCheckTime;
 
-                        // Send new results to client
+                        // Send new results to client immediately
                         send(JSON.stringify({
                             type: 'results',
                             results: formattedResults,
-                            timestamp: Date.now()
+                            timestamp: Date.now(),
+                            message: `New results from mobile app: ${formattedResults.length} updates`
                         }));
                     }
 
                     // Send heartbeat every 30 seconds
-                    if (Date.now() % 30000 < 5000) {
+                    if (Date.now() % 30000 < 1000) {
                         send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }));
                     }
                 } catch (error: any) {
                     console.error('SSE poll error:', error);
                     send(JSON.stringify({ type: 'error', message: error.message }));
                 }
-            }, 5000); // Poll every 5 seconds
+            }, 1000); // Poll every 1 second for near real-time updates
 
             // Cleanup on close
             request.signal.addEventListener('abort', () => {

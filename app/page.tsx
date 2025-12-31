@@ -364,15 +364,18 @@ export default function Home() {
                 
                 if (data.type === 'connected') {
                     console.log('✅ [SSE]', data.message);
+                    addLog('Connected to real-time updates', 'success');
                 } else if (data.type === 'results' && data.results && data.results.length > 0) {
-                    console.log('🔄 [SSE] Received new results:', data.results.length);
-                    // Trigger loadResultsFromWorkers to update UI with new results
+                    console.log('🔄 [SSE] Received new results:', data.results.length, data.message || '');
+                    addLog(`📱 New results received: ${data.results.length} updates`, 'success');
+                    // Trigger loadResultsFromWorkers to update UI with new results immediately
                     loadResultsFromWorkers();
                 } else if (data.type === 'heartbeat') {
-                    // Just keep connection alive
-                    console.log('💓 [SSE] Heartbeat');
+                    // Just keep connection alive (silent)
+                    // console.log('💓 [SSE] Heartbeat');
                 } else if (data.type === 'error') {
                     console.error('❌ [SSE] Error:', data.message);
+                    addLog(`SSE error: ${data.message}`, 'error');
                 }
             } catch (error) {
                 console.error('Error parsing SSE message:', error);
