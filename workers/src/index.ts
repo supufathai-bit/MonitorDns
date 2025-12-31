@@ -537,9 +537,10 @@ async function handleUpdateDomains(
         }
         
         // Then, insert or replace domains in the new list
-        const stmt = env.DB.prepare("INSERT OR REPLACE INTO domains (id, hostname, url, updated_at) VALUES (?, ?, ?, ?)");
+        // Set is_monitoring = 1 for all domains in the new list
+        const stmt = env.DB.prepare("INSERT OR REPLACE INTO domains (id, hostname, url, is_monitoring, updated_at) VALUES (?, ?, ?, ?, ?)");
         const batch = uniqueHostnames.map(hostname =>
-            stmt.bind(hostname, hostname, hostname, Date.now())
+            stmt.bind(hostname, hostname, hostname, 1, Date.now())
         );
         await env.DB.batch(batch);
 
