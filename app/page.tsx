@@ -340,8 +340,8 @@ export default function Home() {
         loadResultsFromWorkers();
     }, [loadResultsFromWorkers]);
 
-    // Fast polling for real-time results updates (every 2 seconds)
-    // This is more reliable than SSE in Cloudflare Workers
+    // Adaptive polling for real-time results updates
+    // Uses smart polling: fast when active, slow when idle (saves D1 reads)
     useEffect(() => {
         if (!loadedRef.current) return;
 
@@ -352,10 +352,13 @@ export default function Home() {
         }
 
         let lastCheckTime = Date.now();
-        console.log('🔄 [Poll] Starting fast polling for new results (every 1 second)');
-        addLog('Started real-time polling (1s interval)', 'info');
+        let pollInterval = 3000; // Start with 3 seconds (saves D1 reads)
+        let consecutiveNoUpdates = 0; // Track consecutive polls with no updates
+        
+        console.log('🔄 [Poll] Starting adaptive polling (starts at 3s, speeds up when active)');
+        addLog('Started real-time polling (adaptive interval)', 'info');
 
-        const pollInterval = setInterval(async () => {
+        const poll = async () => {
             try {
                 // Check for new results
                 const response = await fetchResultsFromWorkers(workersUrl);
@@ -368,14 +371,33 @@ export default function Home() {
                         console.log(`🔄 [Poll] Found new results! Latest timestamp: ${latestResult} (was: ${lastCheckTime})`);
                         addLog(`📱 New results detected: ${response.results.length} updates`, 'success');
                         lastCheckTime = latestResult;
+                        consecutiveNoUpdates = 0;
+                        // Speed up polling when we find new results (1 second for next few polls)
+                        pollInterval = 1000;
                         // Load and update results immediately
                         await loadResultsFromWorkers();
+                    } else {
+                        // No new results - slow down polling gradually
+                        consecutiveNoUpdates++;
+                        if (consecutiveNoUpdates > 5) {
+                            // After 5 consecutive polls with no updates, slow down to 5 seconds
+                            pollInterval = 5000;
+                        } else if (consecutiveNoUpdates > 2) {
+                            // After 2 consecutive polls, slow down to 3 seconds
+                            pollInterval = 3000;
+                        }
                     }
                 }
             } catch (error) {
                 console.error('Poll error:', error);
             }
-        }, 1000); // Poll every 1 second for near real-time updates
+            
+            // Schedule next poll with adaptive interval
+            setTimeout(poll, pollInterval);
+        };
+
+        // Start polling
+        poll();
 
         return () => {
             clearInterval(pollInterval);
