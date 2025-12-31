@@ -436,7 +436,7 @@ export default function Home() {
 
             loadData();
         }
-    }, [addLog]);
+    }, [isAuthenticated, addLog]);
 
     // Load results from Workers - make it a reusable callback
     const loadResultsFromWorkers = useCallback(async () => {
