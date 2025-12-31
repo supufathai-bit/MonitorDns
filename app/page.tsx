@@ -19,8 +19,8 @@ const generateId = () => {
 };
 
 const defaultSettings: AppSettings = {
-    telegramBotToken: '',
-    telegramChatId: '',
+  telegramBotToken: '',
+  telegramChatId: '',
     checkInterval: 360, // Default to 6 hours (4 scans per day: 0:00, 6:00, 12:00, 18:00)
     backendUrl: '',
     workersUrl: process.env.NEXT_PUBLIC_WORKERS_URL || ''
@@ -42,24 +42,24 @@ const createEmptyResults = (): Record<ISP, ISPResult> => {
 };
 
 export default function Home() {
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'settings'>('dashboard');
-    const [domains, setDomains] = useState<Domain[]>([]);
-    const [newUrl, setNewUrl] = useState('');
-    const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-    const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [nextScanTime, setNextScanTime] = useState<number | null>(null);
-
-    // Refs for logic
-    const loadedRef = useRef(false);
-    const domainsRef = useRef<Domain[]>([]);
-    const settingsRef = useRef<AppSettings>(defaultSettings);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings'>('dashboard');
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [newUrl, setNewUrl] = useState('');
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [nextScanTime, setNextScanTime] = useState<number | null>(null);
+  
+  // Refs for logic
+  const loadedRef = useRef(false);
+  const domainsRef = useRef<Domain[]>([]);
+  const settingsRef = useRef<AppSettings>(defaultSettings);
     const kvLimitExceededRef = useRef(false); // Track KV limit status
     const nextScanTimeRef = useRef<number | null>(null); // Track nextScanTime without causing re-renders
 
-    // Sync refs
-    useEffect(() => { domainsRef.current = domains; }, [domains]);
-    useEffect(() => { settingsRef.current = settings; }, [settings]);
+  // Sync refs
+  useEffect(() => { domainsRef.current = domains; }, [domains]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
 
     // Add log function (must be defined before useEffects that use it)
     const addLog = useCallback((message: string, type: LogEntry['type']) => {
@@ -72,8 +72,8 @@ export default function Home() {
     }, []);
 
     // Load Data on Mount - Try Workers API first, fallback to localStorage
-    useEffect(() => {
-        if (typeof window !== 'undefined' && !loadedRef.current) {
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !loadedRef.current) {
             const loadData = async () => {
                 try {
                     const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
@@ -96,9 +96,9 @@ export default function Home() {
                                 } else {
                                     // No domains in Workers, check localStorage
                                     const savedDomains = localStorage.getItem('sentinel_domains');
-                                    if (savedDomains) {
+            if (savedDomains) {
                                         try {
-                                            setDomains(JSON.parse(savedDomains));
+              setDomains(JSON.parse(savedDomains));
                                             addLog('Loaded domains from localStorage (backup)', 'info');
                                         } catch {
                                             // If parse fails, use defaults
@@ -112,17 +112,17 @@ export default function Home() {
                                             }));
                                             setDomains(initialDomains);
                                         }
-                                    } else {
+            } else {
                                         // No domains anywhere, use defaults
-                                        const initialDomains = DEFAULT_DOMAINS.map(url => ({
-                                            id: generateId(),
-                                            url,
-                                            hostname: getHostname(url),
-                                            lastCheck: null,
-                                            results: createEmptyResults(),
-                                            isMonitoring: true
-                                        }));
-                                        setDomains(initialDomains);
+                const initialDomains = DEFAULT_DOMAINS.map(url => ({
+                    id: generateId(),
+                    url,
+                    hostname: getHostname(url),
+                    lastCheck: null,
+                    results: createEmptyResults(),
+                    isMonitoring: true
+                }));
+                setDomains(initialDomains);
                                     }
                                 }
                             } else {
@@ -157,9 +157,9 @@ export default function Home() {
                                 } else {
                                     // No settings in Workers, try localStorage
                                     const savedSettings = localStorage.getItem('sentinel_settings');
-                                    if (savedSettings) {
+            if (savedSettings) {
                                         try {
-                                            setSettings(JSON.parse(savedSettings));
+              setSettings(JSON.parse(savedSettings));
                                             addLog('Loaded settings from localStorage (backup)', 'info');
                                         } catch {
                                             // Use defaults
@@ -221,7 +221,7 @@ export default function Home() {
                             }
                         }
                     }
-                } catch (e) {
+        } catch (e) {
                     console.error("Error loading data:", e);
                     // Last resort: try localStorage
                     const savedDomains = localStorage.getItem('sentinel_domains');
@@ -248,8 +248,8 @@ export default function Home() {
             };
 
             loadData();
-        }
-    }, []);
+    }
+  }, []);
 
     // Load results from Workers - make it a reusable callback
     const loadResultsFromWorkers = useCallback(async () => {
@@ -427,7 +427,7 @@ export default function Home() {
     }, [addLog]);
 
     // Load results immediately when component mounts
-    useEffect(() => {
+  useEffect(() => {
         if (!loadedRef.current) return;
         loadResultsFromWorkers();
     }, [loadResultsFromWorkers]);
@@ -635,9 +635,9 @@ export default function Home() {
             };
             saveToWorkers();
         }
-    }, [domains]);
+  }, [domains]);
 
-    useEffect(() => {
+  useEffect(() => {
         if (loadedRef.current) {
             // Save to localStorage (backup)
             localStorage.setItem('sentinel_settings', JSON.stringify(settings));
@@ -665,7 +665,7 @@ export default function Home() {
             };
             saveToWorkers();
         }
-    }, [settings]);
+  }, [settings]);
 
     // Helper function to sync domains to Workers
     const syncDomainsToWorkers = useCallback(async (domainsToSync: Domain[]) => {
@@ -779,7 +779,7 @@ export default function Home() {
     }, [addLog]);
 
     const handleAddDomain = async (e: React.FormEvent) => {
-        e.preventDefault();
+    e.preventDefault();
 
         console.log('=== HANDLE ADD DOMAIN DEBUG ===');
         console.log('newUrl:', newUrl);
@@ -788,26 +788,26 @@ export default function Home() {
             console.log('❌ No URL provided, returning');
             return;
         }
-
-        const hostname = getHostname(newUrl);
+    
+    const hostname = getHostname(newUrl);
         console.log('Hostname:', hostname);
 
-        const newDomain: Domain = {
-            id: generateId(),
-            url: newUrl,
-            hostname,
-            lastCheck: null,
-            results: createEmptyResults(),
-            isMonitoring: true,
-        };
+    const newDomain: Domain = {
+      id: generateId(),
+      url: newUrl,
+      hostname,
+      lastCheck: null,
+      results: createEmptyResults(),
+      isMonitoring: true,
+    };
 
         const updatedDomains = [...domainsRef.current, newDomain];
         console.log('Updated domains:', updatedDomains.map(d => d.hostname));
         console.log('Current domainsRef:', domainsRef.current.map(d => d.hostname));
 
         setDomains(updatedDomains);
-        setNewUrl('');
-        addLog(`Added domain: ${hostname}`, 'info');
+    setNewUrl('');
+    addLog(`Added domain: ${hostname}`, 'info');
 
         console.log('About to call syncDomainsToWorkers...');
         console.log('syncDomainsToWorkers function:', typeof syncDomainsToWorkers);
@@ -834,20 +834,20 @@ export default function Home() {
 
         // Sync immediately after deleting
         await syncDomainsToWorkers(updatedDomains);
-    };
+  };
 
-    const handleUpdateDomain = (id: string, updates: Partial<Domain>) => {
-        setDomains(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-        addLog(`Updated settings for ${domains.find(d => d.id === id)?.hostname}`, 'info');
-    };
+  const handleUpdateDomain = (id: string, updates: Partial<Domain>) => {
+    setDomains(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
+    addLog(`Updated settings for ${domains.find(d => d.id === id)?.hostname}`, 'info');
+  };
 
-    const checkSingleDomain = useCallback(async (domainId: string) => {
-        const currentDomain = domainsRef.current.find(d => d.id === domainId);
-        if (!currentDomain) return;
+  const checkSingleDomain = useCallback(async (domainId: string) => {
+    const currentDomain = domainsRef.current.find(d => d.id === domainId);
+    if (!currentDomain) return;
 
         addLog(`Requesting mobile app to check ${currentDomain.hostname}...`, 'info');
 
-        const currentSettings = settingsRef.current;
+    const currentSettings = settingsRef.current;
         const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.workersUrl || currentSettings.backendUrl;
 
         if (workersUrl) {
@@ -990,12 +990,12 @@ export default function Home() {
                                     }));
 
                                     const blockedISPs = Object.values(updatedResults)
-                                        .filter(r => r.status === Status.BLOCKED)
-                                        .map(r => r.isp);
+        .filter(r => r.status === Status.BLOCKED)
+        .map(r => r.isp);
 
-                                    if (blockedISPs.length > 0) {
-                                        addLog(`${currentDomain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
-                                        
+    if (blockedISPs.length > 0) {
+        addLog(`${currentDomain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
+        
                                         // Send Telegram alert to both chat IDs:
                                         // 1. Domain's custom chat ID (ห้องแยกแต่ละลิงก์)
                                         // 2. Settings chat ID (ห้องรวม)
@@ -1027,9 +1027,9 @@ export default function Home() {
                                                 }
                                             }).catch(error => {
                                                 console.error('Error sending Telegram alerts:', error);
-                                            });
-                                        }
-                                    } else {
+                });
+        }
+    } else {
                                         addLog(`${currentDomain.hostname}: Check complete`, 'success');
                                     }
                                     return; // Success, stop polling
@@ -1038,7 +1038,7 @@ export default function Home() {
 
                             if (attempts < maxAttempts) {
                                 setTimeout(pollForResults, 2000);
-                            } else {
+        } else {
                                 addLog(`Timeout waiting for results for ${currentDomain.hostname}`, 'error');
                             }
                         } catch (error) {
@@ -1063,14 +1063,14 @@ export default function Home() {
         } else {
             addLog('Workers URL not configured', 'error');
         }
-    }, [addLog]);
+  }, [addLog]);
 
-    const runAllChecks = useCallback(async () => {
-        if (loading) return;
-        setLoading(true);
-        addLog('Starting full scan...', 'info');
-
-        const currentSettings = settingsRef.current;
+  const runAllChecks = useCallback(async () => {
+    if (loading) return;
+    setLoading(true);
+    addLog('Starting full scan...', 'info');
+    
+    const currentSettings = settingsRef.current;
         const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.workersUrl || currentSettings.backendUrl;
 
         if (workersUrl) {
@@ -1411,8 +1411,29 @@ export default function Home() {
                                     addLog('All domains are active', 'success');
                                 }
 
-                                setLoading(false);
-                                addLog('Scan complete.', 'success');
+                                // Update nextScanTime in D1 after scan completes (shared storage)
+                                const currentInterval = settingsRef.current.checkInterval;
+                                if (currentInterval > 0) {
+                                    const intervalMs = currentInterval * 60 * 1000;
+                                    const nextScan = Date.now() + intervalMs;
+                                    nextScanTimeRef.current = nextScan;
+                                    setNextScanTime(nextScan);
+                                    
+                                    // Save to Workers API (D1) - this is where we write nextScanTime
+                                    try {
+                                        await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
+                                        });
+                                        console.log(`📅 Saved next scan time to D1 after manual scan: ${new Date(nextScan).toLocaleString()}`);
+                                    } catch (saveError) {
+                                        console.error('Error saving next scan time to D1:', saveError);
+                                    }
+                                }
+
+    setLoading(false);
+    addLog('Scan complete.', 'success');
                                 return;
                             } else {
                                 console.log('Results are older than trigger, waiting for new results...');
@@ -1455,12 +1476,12 @@ export default function Home() {
             addLog('Mobile app integration requires Workers URL to be configured.', 'error');
             setLoading(false);
         }
-    }, [loading, checkSingleDomain, addLog]);
+  }, [loading, checkSingleDomain, addLog]);
 
-    // Scheduler
-    useEffect(() => {
-        if (!loadedRef.current || domains.length === 0) return;
-
+  // Scheduler
+  useEffect(() => {
+    if (!loadedRef.current || domains.length === 0) return;
+    
         // Skip auto-scan if KV limit is exceeded (but we're using D1 now, so this should not happen)
         // Note: D1 doesn't have write limits like KV, so this check is mainly for backward compatibility
         // Reset KV limit check since we're using D1 now
@@ -1474,10 +1495,10 @@ export default function Home() {
         // Removed: Auto-trigger scan on mount
         // Now we just load existing results from Workers API (D1) instead of triggering a new scan
         // Users can manually trigger a scan using the "RUN FULL SCAN" button if needed
-    }, [loading, settings.checkInterval, domains.length]); // Dependencies
+  }, [loading, settings.checkInterval, domains.length]); // Dependencies
 
     // Shared auto-scan timer (sync with Workers API to avoid duplicate triggers)
-    useEffect(() => {
+  useEffect(() => {
         if (!loadedRef.current || settings.checkInterval <= 0) {
             setNextScanTime(null);
             return;
@@ -1490,12 +1511,12 @@ export default function Home() {
             const intervalMs = settings.checkInterval * 60 * 1000;
             const nextScan = Date.now() + intervalMs;
             setNextScanTime(nextScan);
-            const intervalId = setInterval(() => {
-                addLog('Auto-scan interval reached', 'info');
-                runAllChecks();
+    const intervalId = setInterval(() => {
+        addLog('Auto-scan interval reached', 'info');
+        runAllChecks();
                 setNextScanTime(Date.now() + intervalMs);
             }, intervalMs);
-            return () => clearInterval(intervalId);
+    return () => clearInterval(intervalId);
         }
 
         let isChecking = false; // Prevent concurrent checks
@@ -1521,35 +1542,11 @@ export default function Home() {
                     }
                 }
                 
-                // No shared time or expired - only create new one if we're the first user
-                // Check again to see if someone else just created it
-                const recheckResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
-                if (recheckResponse.ok) {
-                    const recheckData = await recheckResponse.json();
-                    if (recheckData.nextScanTime && recheckData.nextScanTime > Date.now()) {
-                        // Someone else just created it, use theirs
-                        nextScanTimeRef.current = recheckData.nextScanTime;
-                        setNextScanTime(recheckData.nextScanTime);
-                        console.log(`📅 Using newly created shared next scan time: ${new Date(recheckData.nextScanTime).toLocaleString()}`);
-                        return;
-                    }
-                }
-                
-                // Still no shared time - create new one (only if truly missing)
-                const nextScan = Date.now() + intervalMs;
-                nextScanTimeRef.current = nextScan;
-                setNextScanTime(nextScan);
-                // Save to Workers API
-                try {
-                    await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ nextScanTime: nextScan, checkInterval: settings.checkInterval }),
-                    });
-                    console.log(`📅 Created new shared next scan time: ${new Date(nextScan).toLocaleString()}`);
-                } catch (saveError) {
-                    console.error('Error saving next scan time:', saveError);
-                }
+                // No shared time or expired - DON'T CREATE NEW ONE
+                // Only read from D1, don't write unless explicitly triggered (RUN FULL SCAN or auto-scan timer)
+                nextScanTimeRef.current = null;
+                setNextScanTime(null);
+                console.log('📅 No shared next scan time in D1 (will be set when scan is triggered)');
             } catch (error) {
                 console.error('Error syncing next scan time:', error);
                 // Keep fallback time that was set above
@@ -1589,7 +1586,7 @@ export default function Home() {
                     console.error('Error checking next scan time:', error);
                 }
 
-                // Trigger scan and update next scan time
+                // Trigger scan and update next scan time in D1 (shared storage)
                 addLog('Auto-scan interval reached', 'info');
                 await runAllChecks();
                 
@@ -1600,16 +1597,16 @@ export default function Home() {
                 nextScanTimeRef.current = nextScan;
                 setNextScanTime(nextScan);
                 
-                // Save to Workers API
+                // Save to Workers API (D1) - this is the ONLY place we write nextScanTime
                 try {
                     await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
                     });
-                    console.log(`📅 Set new shared next scan time: ${new Date(nextScan).toLocaleString()}`);
+                    console.log(`📅 Saved new shared next scan time to D1: ${new Date(nextScan).toLocaleString()}`);
                 } catch (error) {
-                    console.error('Error updating next scan time:', error);
+                    console.error('Error saving next scan time to D1:', error);
                 }
                 
                 isChecking = false;
@@ -1619,106 +1616,106 @@ export default function Home() {
         return () => clearInterval(checkInterval);
     }, [loadedRef.current, settings.checkInterval, runAllChecks, addLog]);
 
-    return (
-        <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
-            <header className="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
-                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
-                    <div className="flex items-center mb-4 md:mb-0">
-                        <div className="w-10 h-10 bg-neon-blue/10 rounded-full flex items-center justify-center mr-3 border border-neon-blue shadow-[0_0_15px_rgba(0,243,255,0.3)]">
-                            <Shield className="w-6 h-6 text-neon-blue" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold text-white tracking-wider">SENTINEL <span className="text-neon-blue">DNS</span></h1>
-                            <p className="text-xs text-gray-500 font-mono">CLOUD EDGE MONITOR</p>
-                        </div>
-                    </div>
-
-                    <nav className="flex space-x-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
-                        <button
-                            onClick={() => setActiveTab('dashboard')}
-                            className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
-                        >
-                            <Activity className="w-4 h-4 inline mr-2" />
-                            Dashboard
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('settings')}
-                            className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
-                        >
-                            <Terminal className="w-4 h-4 inline mr-2" />
-                            Settings
-                        </button>
-                    </nav>
+  return (
+    <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
+      <header className="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
+            <div className="flex items-center mb-4 md:mb-0">
+                <div className="w-10 h-10 bg-neon-blue/10 rounded-full flex items-center justify-center mr-3 border border-neon-blue shadow-[0_0_15px_rgba(0,243,255,0.3)]">
+                    <Shield className="w-6 h-6 text-neon-blue" />
                 </div>
-            </header>
+                <div>
+                    <h1 className="text-2xl font-bold text-white tracking-wider">SENTINEL <span className="text-neon-blue">DNS</span></h1>
+                    <p className="text-xs text-gray-500 font-mono">CLOUD EDGE MONITOR</p>
+                </div>
+            </div>
 
-            <main className="max-w-7xl mx-auto p-4 md:p-6">
-                {activeTab === 'settings' ? (
-                    <div className="max-w-2xl mx-auto animate-fadeIn">
-                        <SettingsPanel settings={settings} onSave={setSettings} />
+            <nav className="flex space-x-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
+                <button 
+                    onClick={() => setActiveTab('dashboard')}
+                    className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                >
+                    <Activity className="w-4 h-4 inline mr-2" />
+                    Dashboard
+                </button>
+                <button 
+                    onClick={() => setActiveTab('settings')}
+                    className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                >
+                    <Terminal className="w-4 h-4 inline mr-2" />
+                    Settings
+                </button>
+            </nav>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto p-4 md:p-6">
+        {activeTab === 'settings' ? (
+            <div className="max-w-2xl mx-auto animate-fadeIn">
+                <SettingsPanel settings={settings} onSave={setSettings} />
+            </div>
+        ) : (
+            <div className="space-y-6 animate-fadeIn">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="col-span-2 space-y-4">
+                        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-lg">
+                            <form onSubmit={handleAddDomain} className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={newUrl}
+                                    onChange={(e) => setNewUrl(e.target.value)}
+                                    placeholder="https://example.com"
+                                    className="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-neon-blue focus:outline-none transition-colors"
+                                />
+                                <button type="submit" className="bg-neon-blue hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded flex items-center transition-colors">
+                                    <Plus className="w-5 h-5" />
+                                </button>
+                            </form>
+                        </div>
+
+                        <div className="space-y-4">
+                            {domains.map(domain => (
+                                <DomainCard 
+                                    key={domain.id} 
+                                    domain={domain} 
+                                    onDelete={handleDeleteDomain}
+                                    onRefresh={checkSingleDomain}
+                                    onUpdate={handleUpdateDomain}
+                                />
+                            ))}
+                            {domains.length === 0 && (
+                                <div className="text-center py-10 text-gray-500 border border-dashed border-gray-800 rounded-lg">
+                                    No domains monitored. Add one above.
+                                </div>
+                            )}
+                        </div>
                     </div>
-                ) : (
-                    <div className="space-y-6 animate-fadeIn">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="col-span-2 space-y-4">
-                                <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-lg">
-                                    <form onSubmit={handleAddDomain} className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newUrl}
-                                            onChange={(e) => setNewUrl(e.target.value)}
-                                            placeholder="https://example.com"
-                                            className="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-neon-blue focus:outline-none transition-colors"
-                                        />
-                                        <button type="submit" className="bg-neon-blue hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded flex items-center transition-colors">
-                                            <Plus className="w-5 h-5" />
-                                        </button>
-                                    </form>
-                                </div>
 
-                                <div className="space-y-4">
-                                    {domains.map(domain => (
-                                        <DomainCard
-                                            key={domain.id}
-                                            domain={domain}
-                                            onDelete={handleDeleteDomain}
-                                            onRefresh={checkSingleDomain}
-                                            onUpdate={handleUpdateDomain}
-                                        />
-                                    ))}
-                                    {domains.length === 0 && (
-                                        <div className="text-center py-10 text-gray-500 border border-dashed border-gray-800 rounded-lg">
-                                            No domains monitored. Add one above.
-                                        </div>
-                                    )}
-                                </div>
+                    <div className="space-y-4">
+                        <div className="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-lg">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">Status Control</h3>
+                                {loading && <Activity className="w-4 h-4 text-neon-blue animate-pulse" />}
                             </div>
-
-                            <div className="space-y-4">
-                                <div className="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-lg">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">Status Control</h3>
-                                        {loading && <Activity className="w-4 h-4 text-neon-blue animate-pulse" />}
-                                    </div>
-
-                                    <button
-                                        onClick={() => runAllChecks()}
-                                        disabled={loading || domains.length === 0}
+                            
+                            <button 
+                                onClick={() => runAllChecks()} 
+                                disabled={loading || domains.length === 0}
                                         className={`w-full py-4 rounded font-bold text-center mb-4 transition-all flex items-center justify-center ${loading
-                                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                            : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
-                                            }`}
-                                    >
-                                        {loading ? <span className="animate-pulse">SCANNING...</span> : <><Play className="w-4 h-4 mr-2 fill-current" /> RUN FULL SCAN</>}
-                                    </button>
-
-                                    <div className="space-y-3 pt-4 border-t border-gray-700">
+                                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                                    : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
+                                }`}
+                            >
+                                {loading ? <span className="animate-pulse">SCANNING...</span> : <><Play className="w-4 h-4 mr-2 fill-current" /> RUN FULL SCAN</>}
+                            </button>
+                            
+                            <div className="space-y-3 pt-4 border-t border-gray-700">
                                         <div className="flex justify-between text-xs items-center">
-                                            <span className="text-gray-400">Interval:</span>
-                                            <span className="text-neon-blue font-mono">
-                                                {settings.checkInterval >= 1440 ? `${(settings.checkInterval / 60).toFixed(0)} Hours` : `${settings.checkInterval} Mins`}
-                                            </span>
-                                        </div>
+                                    <span className="text-gray-400">Interval:</span>
+                                    <span className="text-neon-blue font-mono">
+                                        {settings.checkInterval >= 1440 ? `${(settings.checkInterval / 60).toFixed(0)} Hours` : `${settings.checkInterval} Mins`}
+                                    </span>
+                                </div>
                                         <div className="flex justify-between text-xs items-center">
                                             <span className="text-gray-400">Auto-Scan:</span>
                                             <button
@@ -1743,44 +1740,44 @@ export default function Home() {
                                             </button>
                                         </div>
                                         <div className="flex justify-between text-xs items-center">
-                                            <span className="text-gray-400">Next Auto-Scan:</span>
-                                            <span className="text-gray-200 font-mono flex items-center">
-                                                <Clock className="w-3 h-3 mr-1 text-gray-500" />
+                                    <span className="text-gray-400">Next Auto-Scan:</span>
+                                    <span className="text-gray-200 font-mono flex items-center">
+                                        <Clock className="w-3 h-3 mr-1 text-gray-500" />
                                                 {settings.checkInterval > 0 && nextScanTime
                                                     ? new Date(nextScanTime).toLocaleTimeString()
                                                     : 'Paused'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-gray-900 p-4 rounded-lg border border-gray-800 h-[400px] flex flex-col shadow-inner">
-                                    <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center">
-                                        <Terminal className="w-4 h-4 mr-2" />
-                                        System Logs
-                                    </h3>
-                                    <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs custom-scrollbar pr-2">
-                                        {logs.map(log => (
-                                            <div key={log.id} className="border-b border-gray-800 pb-1 last:border-0">
-                                                <span className="text-gray-600 inline-block w-[70px]">
-                                                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                                </span>
-                                                <span className={`ml-2 ${log.type === 'error' ? 'text-red-500' :
-                                                    log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
-                                                        log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
-                                                    }`}>{log.message}</span>
-                                            </div>
-                                        ))}
-                                        {logs.length === 0 && <span className="text-gray-700 italic">Waiting for activity...</span>}
-                                    </div>
+                                    </span>
                                 </div>
                             </div>
                         </div>
+
+                        <div className="bg-gray-900 p-4 rounded-lg border border-gray-800 h-[400px] flex flex-col shadow-inner">
+                            <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center">
+                                <Terminal className="w-4 h-4 mr-2" />
+                                System Logs
+                            </h3>
+                            <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs custom-scrollbar pr-2">
+                                {logs.map(log => (
+                                    <div key={log.id} className="border-b border-gray-800 pb-1 last:border-0">
+                                        <span className="text-gray-600 inline-block w-[70px]">
+                                                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                        </span>
+                                                <span className={`ml-2 ${log.type === 'error' ? 'text-red-500' :
+                                            log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
+                                            log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
+                                        }`}>{log.message}</span>
+                                    </div>
+                                ))}
+                                {logs.length === 0 && <span className="text-gray-700 italic">Waiting for activity...</span>}
+                            </div>
+                        </div>
                     </div>
-                )}
-            </main>
-        </div>
-    );
+                </div>
+            </div>
+        )}
+      </main>
+    </div>
+  );
 }
                         </div>
                     </div>
