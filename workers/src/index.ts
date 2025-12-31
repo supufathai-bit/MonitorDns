@@ -1416,19 +1416,9 @@ async function handleSaveFrontendDomains(
         // Normalize: remove duplicates and sort
         const uniqueHostnames = [...new Set(hostnames)].sort();
 
-        // Check if changed (compare with D1)
-        const existingDomains = await getDomainsFromD1(env);
-        const existingSorted = existingDomains.map(h => h.toLowerCase()).sort();
-        const newSorted = uniqueHostnames.map(h => h.toLowerCase()).sort();
-        const domainsChanged = JSON.stringify(existingSorted) !== JSON.stringify(newSorted);
-
-        if (!domainsChanged) {
-            return jsonResponse({
-                success: true,
-                message: 'Domains unchanged, no update needed',
-                saved: false,
-            }, 200, corsHeaders);
-        }
+        // Always save domains (even if hostnames are the same) because telegramChatId might have changed
+        // INSERT OR REPLACE will update existing records, so it's safe to always save
+        // This ensures telegramChatId changes are always persisted to D1
 
         // Save to D1 (primary storage)
         // First, delete domains that are not in the new list
