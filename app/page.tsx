@@ -1542,11 +1542,19 @@ export default function Home() {
         // Sync immediately (but don't wait - we already set fallback)
         syncNextScanTime();
 
+        // Use ref to track nextScanTime without causing re-renders
+        const nextScanTimeRef = useRef<number | null>(fallbackNextScan);
+        // Update ref when nextScanTime changes (for display purposes)
+        useEffect(() => {
+            nextScanTimeRef.current = nextScanTime;
+        }, [nextScanTime]);
+
         // Check every 10 seconds if it's time to scan
         const checkInterval = setInterval(async () => {
             if (isChecking) return; // Prevent concurrent checks
             
-            const currentNextScan = nextScanTime;
+            // Use ref value to avoid dependency on state
+            const currentNextScan = nextScanTimeRef.current;
             if (currentNextScan && Date.now() >= currentNextScan) {
                 isChecking = true;
                 
@@ -1557,6 +1565,7 @@ export default function Home() {
                         const data = await response.json();
                         if (data.nextScanTime && data.nextScanTime > Date.now()) {
                             // Someone else already updated, use their time
+                            nextScanTimeRef.current = data.nextScanTime;
                             setNextScanTime(data.nextScanTime);
                             console.log('⏭️ Scan already triggered by another user, skipping');
                             isChecking = false;
@@ -1571,8 +1580,11 @@ export default function Home() {
                 addLog('Auto-scan interval reached', 'info');
                 await runAllChecks();
                 
-                const intervalMs = settings.checkInterval * 60 * 1000;
+                // Use ref to get current checkInterval (avoid dependency)
+                const currentInterval = settingsRef.current.checkInterval;
+                const intervalMs = currentInterval * 60 * 1000;
                 const nextScan = Date.now() + intervalMs;
+                nextScanTimeRef.current = nextScan;
                 setNextScanTime(nextScan);
                 
                 // Save to Workers API
@@ -1580,8 +1592,9 @@ export default function Home() {
                     await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ nextScanTime: nextScan, checkInterval: settings.checkInterval }),
+                        body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
                     });
+                    console.log(`📅 Set new shared next scan time: ${new Date(nextScan).toLocaleString()}`);
                 } catch (error) {
                     console.error('Error updating next scan time:', error);
                 }
@@ -1591,7 +1604,7 @@ export default function Home() {
         }, 10000); // Check every 10 seconds
 
         return () => clearInterval(checkInterval);
-    }, [loadedRef.current, settings.checkInterval, runAllChecks, addLog, nextScanTime]);
+    }, [loadedRef.current, settings.checkInterval, runAllChecks, addLog]);
 
     return (
         <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
