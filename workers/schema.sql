@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS devices (
   updated_at INTEGER DEFAULT (unixepoch())
 );
 
+-- Users table for authentication
+CREATE TABLE IF NOT EXISTS users (
+  username TEXT PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  created_at INTEGER DEFAULT (unixepoch()),
+  updated_at INTEGER DEFAULT (unixepoch())
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_results_hostname ON results(hostname);
 CREATE INDEX IF NOT EXISTS idx_results_timestamp ON results(timestamp DESC);

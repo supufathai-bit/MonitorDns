@@ -42,6 +42,7 @@ const createEmptyResults = (): Record<ISP, ISPResult> => {
 };
 
 export default function Home() {
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
     const [activeTab, setActiveTab] = useState<'dashboard' | 'settings'>('dashboard');
     const [domains, setDomains] = useState<Domain[]>([]);
     const [newUrl, setNewUrl] = useState('');
@@ -61,6 +62,47 @@ export default function Home() {
     useEffect(() => { domainsRef.current = domains; }, [domains]);
     useEffect(() => { settingsRef.current = settings; }, [settings]);
 
+    // Check authentication on mount
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const checkAuth = async () => {
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                    setIsAuthenticated(false);
+                    window.location.href = '/login';
+                    return;
+                }
+
+                try {
+                    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                    if (!workersUrl) {
+                        setIsAuthenticated(false);
+                        window.location.href = '/login';
+                        return;
+                    }
+
+                    const response = await fetch(`${workersUrl}/api/auth/verify?token=${encodeURIComponent(token)}`);
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        setIsAuthenticated(true);
+                    } else {
+                        localStorage.removeItem('auth_token');
+                        localStorage.removeItem('auth_user');
+                        setIsAuthenticated(false);
+                        window.location.href = '/login';
+                    }
+                } catch (error) {
+                    console.error('Auth check error:', error);
+                    setIsAuthenticated(false);
+                    window.location.href = '/login';
+                }
+            };
+
+            checkAuth();
+        }
+    }, []);
+
     // Add log function (must be defined before useEffects that use it)
     const addLog = useCallback((message: string, type: LogEntry['type']) => {
         setLogs(prev => [{
@@ -73,7 +115,7 @@ export default function Home() {
 
     // Load Data on Mount - Try Workers API first, fallback to localStorage
     useEffect(() => {
-        if (typeof window !== 'undefined' && !loadedRef.current) {
+        if (typeof window !== 'undefined' && !loadedRef.current && isAuthenticated === true) {
             const loadData = async () => {
                 try {
                     const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
@@ -984,17 +1026,17 @@ export default function Home() {
     const handleUpdateDomain = async (id: string, updates: Partial<Domain>) => {
         const updatedDomains = domainsRef.current.map(d => d.id === id ? { ...d, ...updates } : d);
         const updatedDomain = updatedDomains.find(d => d.id === id);
-        
+
         if (updatedDomain) {
             addLog(`Updated settings for ${updatedDomain.hostname}`, 'info');
-            
+
             // Sync to D1 FIRST before updating state to avoid race condition
             // This ensures D1 is updated before any useEffect triggers
             try {
                 console.log('🔄 Syncing domain settings to D1 before state update...');
                 await syncDomainsToWorkers(updatedDomains);
                 console.log('✅ Domain settings synced to D1 successfully');
-                
+
                 // Only update state AFTER sync is complete
                 // This prevents useEffect from saving old data
                 setDomains(updatedDomains);
@@ -1811,6 +1853,23 @@ export default function Home() {
 
         return () => clearInterval(checkInterval);
     }, [loadedRef.current, settings.checkInterval, runAllChecks, addLog]);
+
+    // Show loading while checking authentication
+    if (isAuthenticated === null) {
+        return (
+            <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-16 h-16 border-4 border-neon-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-400">Checking authentication...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Redirect to login if not authenticated
+    if (isAuthenticated === false) {
+        return null; // Will redirect via useEffect
+    }
 
     return (
         <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">

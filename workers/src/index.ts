@@ -214,6 +214,19 @@ export default {
             return handleUpdateNextScanTime(request, env, corsHeaders);
         }
 
+        // Authentication endpoints
+        if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+            return handleLogin(request, env, corsHeaders);
+        }
+
+        if (url.pathname === '/api/auth/verify' && request.method === 'GET') {
+            return handleVerifyToken(request, env, corsHeaders);
+        }
+
+        if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+            return handleLogout(request, env, corsHeaders);
+        }
+
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
@@ -725,6 +738,192 @@ async function handleGetNextScanTime(
             corsHeaders
         );
     }
+}
+
+// Authentication handlers
+async function handleLogin(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const body = await request.json();
+        const { username, password } = body;
+
+        if (!username || !password) {
+            return jsonResponse(
+                { error: 'Username and password required' },
+                400,
+                corsHeaders
+            );
+        }
+
+        // Get user from D1
+        try {
+            const result = await env.DB.prepare(
+                "SELECT * FROM users WHERE username = ?"
+            ).bind(username).first();
+
+            if (!result) {
+                return jsonResponse(
+                    { error: 'Invalid username or password' },
+                    401,
+                    corsHeaders
+                );
+            }
+
+            // Simple password check (in production, use bcrypt or similar)
+            // For now, we'll store hashed password in D1
+            const userData = JSON.parse(result.password_hash as string);
+            const storedHash = userData.hash;
+            const inputHash = await hashPassword(password);
+
+            if (inputHash !== storedHash) {
+                return jsonResponse(
+                    { error: 'Invalid username or password' },
+                    401,
+                    corsHeaders
+                );
+            }
+
+            // Generate token (simple JWT-like token)
+            const token = generateToken(username);
+
+            // Save token to D1
+            const tokenKey = `auth_token:${token}`;
+            await env.DB.prepare(
+                "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+            ).bind(
+                tokenKey,
+                JSON.stringify({ username, createdAt: Date.now() }),
+                Date.now()
+            ).run();
+
+            return jsonResponse({
+                success: true,
+                token,
+                username,
+            }, 200, corsHeaders);
+        } catch (d1Error) {
+            console.error('D1 login error:', d1Error);
+            return jsonResponse(
+                { error: 'Database error' },
+                500,
+                corsHeaders
+            );
+        }
+    } catch (error: any) {
+        console.error('Login error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+async function handleVerifyToken(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const authHeader = request.headers.get('Authorization');
+        const token = authHeader?.replace('Bearer ', '') || new URL(request.url).searchParams.get('token');
+
+        if (!token) {
+            return jsonResponse(
+                { error: 'Token required' },
+                401,
+                corsHeaders
+            );
+        }
+
+        // Verify token from D1
+        const tokenKey = `auth_token:${token}`;
+        const result = await env.DB.prepare(
+            "SELECT value FROM settings WHERE key = ?"
+        ).bind(tokenKey).first();
+
+        if (!result) {
+            return jsonResponse(
+                { error: 'Invalid token' },
+                401,
+                corsHeaders
+            );
+        }
+
+        const tokenData = JSON.parse(result.value as string);
+        const tokenAge = Date.now() - tokenData.createdAt;
+        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+        if (tokenAge > maxAge) {
+            // Token expired
+            await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(tokenKey).run();
+            return jsonResponse(
+                { error: 'Token expired' },
+                401,
+                corsHeaders
+            );
+        }
+
+        return jsonResponse({
+            success: true,
+            username: tokenData.username,
+        }, 200, corsHeaders);
+    } catch (error: any) {
+        console.error('Verify token error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+async function handleLogout(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const authHeader = request.headers.get('Authorization');
+        const token = authHeader?.replace('Bearer ', '');
+
+        if (token) {
+            const tokenKey = `auth_token:${token}`;
+            await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(tokenKey).run();
+        }
+
+        return jsonResponse({
+            success: true,
+            message: 'Logged out successfully',
+        }, 200, corsHeaders);
+    } catch (error: any) {
+        console.error('Logout error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Helper functions
+async function hashPassword(password: string): Promise<string> {
+    // Simple hash (in production, use bcrypt or Web Crypto API)
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function generateToken(username: string): string {
+    // Simple token generation (in production, use JWT)
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    return `${btoa(username)}.${timestamp}.${random}`;
 }
 
 // Update next auto-scan time (shared across all users)
