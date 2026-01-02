@@ -121,6 +121,12 @@ export default {
             } else {
                 console.log(`⏰ [Cron] Not time yet. Time until scan: ${Math.round(timeUntilScan / 1000 / 60)} minutes`);
             }
+
+            // Always check and send alerts based on latest results in D1
+            // This ensures alerts are sent even if mobile app sync happened earlier
+            checkAndSendAlerts(env).catch(error => {
+                console.error('⏰ [Cron] Error in background alert check:', error);
+            });
         } catch (error) {
             console.error('⏰ [Cron] Error in scheduled handler:', error);
         }
