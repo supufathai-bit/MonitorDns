@@ -44,6 +44,8 @@ export default {
         console.log('⏰ [Cron] Scheduled event triggered');
 
         try {
+            const now = Date.now(); // Get current time once at the start
+
             // Get next scan time from D1
             const key = 'next_scan_time';
             const result = await env.DB.prepare(
@@ -51,25 +53,34 @@ export default {
             ).bind(key).first();
 
             if (!result) {
-                console.log('⏰ [Cron] No next scan time found, skipping');
-                return;
+                console.log('⏰ [Cron] No next scan time found, creating new one and triggering scan...');
+                // Create new next scan time and trigger immediately
+                const defaultInterval = 360; // 6 hours in minutes
+                const nextScanData = {
+                    nextScanTime: now, // Set to now to trigger immediately
+                    checkInterval: defaultInterval,
+                    timestamp: now
+                };
+                await env.DB.prepare(
+                    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+                ).bind(key, JSON.stringify(nextScanData), now).run();
+                // Continue with the scan trigger below
             }
 
-            const data = JSON.parse(result.value as string);
-            const nextScanTime = data.nextScanTime;
+            const data = result ? JSON.parse(result.value as string) : { nextScanTime: now, checkInterval: 360 };
+            const nextScanTime = data.nextScanTime || now;
             const checkInterval = data.checkInterval || 360;
 
-            if (!nextScanTime) {
-                console.log('⏰ [Cron] No next scan time set, skipping');
-                return;
+            if (!data.nextScanTime) {
+                console.log('⏰ [Cron] No next scan time set, triggering scan now...');
+                // Fall through to trigger scan
             }
 
-            const now = Date.now();
             const timeUntilScan = nextScanTime - now;
 
-            // Check if it's time to scan (within 5 minutes window)
-            if (timeUntilScan <= 0 && timeUntilScan >= -300000) { // -5 minutes tolerance
-                console.log(`⏰ [Cron] Time to scan! nextScanTime: ${new Date(nextScanTime).toISOString()}, now: ${new Date(now).toISOString()}`);
+            // Check if it's time to scan (past the scheduled time)
+            if (timeUntilScan <= 0) {
+                console.log(`⏰ [Cron] Time to scan! nextScanTime: ${new Date(nextScanTime).toISOString()}, now: ${new Date(now).toISOString()}, overdue by ${Math.abs(Math.round(timeUntilScan / 1000 / 60))} minutes`);
 
                 // Trigger mobile app to check DNS
                 const triggerKey = 'trigger:check';
