@@ -1988,53 +1988,63 @@ async function sendTelegramAlert(
     if (!botToken || !chatId) return false;
 
     // แสดงเฉพาะ AIS, True, DTAC พร้อม emoji
-    // Note: Mobile app อาจส่งมาแค่ AIS และ DTAC (ไม่มี True)
-    // ถ้าไม่มี True ให้แสดงเฉพาะ ISP ที่มีข้อมูล
+    // Note: True และ DTAC เป็นค่ายเดียวกัน (True Corporation) → ใช้ข้อมูลเดียวกัน
     const availableKeys = Object.keys(results);
     console.log(`🔔 [Alert] Available ISP keys in results for ${hostname}:`, availableKeys);
     
-    // Map ISP names from D1 to display names
-    // Try to find each ISP in results (case-insensitive)
-    const ispConfigs = [
-        { keys: ['AIS', 'ais'], name: 'AIS' },
-        { keys: ['True', 'TRUE', 'true'], name: 'True' }, // May not exist in D1
-        { keys: ['DTAC', 'dtac'], name: 'DTAC' },
-    ];
+    // หา status ของแต่ละ ISP (case-insensitive)
+    const findISPStatus = (keys: string[]): string | null => {
+        for (const key of keys) {
+            // Try exact match first
+            if (results[key]) {
+                return results[key].status;
+            }
+            // Try case-insensitive match
+            const matchedKey = Object.keys(results).find(k => k.toLowerCase() === key.toLowerCase());
+            if (matchedKey) {
+                return results[matchedKey].status;
+            }
+        }
+        return null;
+    };
     
-    const ispStatusList = ispConfigs
-        .map(({ keys, name }) => {
-            // Find first matching key with a result (case-insensitive)
-            let status: string | null = null;
-            let foundKey: string | null = null;
-            
-            for (const key of keys) {
-                // Try exact match first
-                if (results[key]) {
-                    status = results[key].status;
-                    foundKey = key;
-                    break;
-                }
-                // Try case-insensitive match
-                const matchedKey = Object.keys(results).find(k => k.toLowerCase() === key.toLowerCase());
-                if (matchedKey) {
-                    status = results[matchedKey].status;
-                    foundKey = matchedKey;
-                    break;
-                }
-            }
-            
-            return { name, status, foundKey };
-        })
-        .filter(item => item.status !== null) // Only include ISPs that have results
-        .map(({ name, status }) => {
-            if (status === 'BLOCKED') {
-                return `🚫 ${name}`;
-            } else if (status === 'ACTIVE') {
-                return `✅ ${name}`;
-            } else {
-                return `⏳ ${name}`;
-            }
-        })
+    // หา status ของ AIS
+    const aisStatus = findISPStatus(['AIS', 'ais']);
+    
+    // หา status ของ DTAC (ใช้สำหรับทั้ง True และ DTAC เพราะเป็นค่ายเดียวกัน)
+    const dtacStatus = findISPStatus(['DTAC', 'dtac']);
+    
+    // สร้างรายการ ISP ที่มีข้อมูล
+    const ispStatusList: string[] = [];
+    
+    // AIS
+    if (aisStatus) {
+        if (aisStatus === 'BLOCKED') {
+            ispStatusList.push(`🚫 AIS`);
+        } else if (aisStatus === 'ACTIVE') {
+            ispStatusList.push(`✅ AIS`);
+        }
+    }
+    
+    // True - ใช้ข้อมูลจาก DTAC (เพราะเป็นค่ายเดียวกัน)
+    if (dtacStatus) {
+        if (dtacStatus === 'BLOCKED') {
+            ispStatusList.push(`🚫 True`);
+        } else if (dtacStatus === 'ACTIVE') {
+            ispStatusList.push(`✅ True`);
+        }
+    }
+    
+    // DTAC
+    if (dtacStatus) {
+        if (dtacStatus === 'BLOCKED') {
+            ispStatusList.push(`🚫 DTAC`);
+        } else if (dtacStatus === 'ACTIVE') {
+            ispStatusList.push(`✅ DTAC`);
+        }
+    }
+    
+    const ispStatusListString = ispStatusList.join('\n');
 
         if (status === 'BLOCKED') {
             return `🚫 ${name}`;
@@ -2051,7 +2061,7 @@ async function sendTelegramAlert(
 <b>Domain:</b> ${hostname}
 <b>Status:</b> BLOCKED / UNREACHABLE
 <b>Detected on:</b>
-${ispStatusList}
+${ispStatusListString}
 
 <i>Please check the dashboard for more details.</i>
 `;
