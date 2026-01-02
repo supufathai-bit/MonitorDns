@@ -1988,17 +1988,24 @@ async function sendTelegramAlert(
     if (!botToken || !chatId) return false;
 
     // แสดงเฉพาะ AIS, True, DTAC พร้อม emoji
-    // Note: 'True' และ 'DTAC' ใน D1 อาจแยกกัน แต่เราแสดงเป็น True และ DTAC แยก
+    // Note: ใน D1 อาจเก็บเป็น 'True', 'TRUE', 'DTAC', 'True/DTAC' (case-insensitive)
     const ispStatusList = [
-        { keys: ['AIS'], name: 'AIS' },
-        { keys: ['True', 'True/DTAC'], name: 'True' }, // Support both 'True' and 'True/DTAC'
-        { keys: ['DTAC'], name: 'DTAC' },
+        { keys: ['AIS', 'ais'], name: 'AIS' },
+        { keys: ['True', 'TRUE', 'true', 'True/DTAC'], name: 'True' }, // Support multiple variations
+        { keys: ['DTAC', 'dtac'], name: 'DTAC' },
     ].map(({ keys, name }) => {
-        // Find first matching key with a result
+        // Find first matching key with a result (case-insensitive)
         let status = 'PENDING';
         for (const key of keys) {
+            // Try exact match first
             if (results[key]) {
                 status = results[key].status;
+                break;
+            }
+            // Try case-insensitive match
+            const foundKey = Object.keys(results).find(k => k.toLowerCase() === key.toLowerCase());
+            if (foundKey) {
+                status = results[foundKey].status;
                 break;
             }
         }
@@ -2118,6 +2125,7 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
                 const ispName = row.isp_name;
                 const status = row.status;
 
+                // Store results with original ISP name from D1
                 // If we already have this ISP name, prefer BLOCKED status
                 if (resultsByISP[ispName]) {
                     if (status === 'BLOCKED') {
@@ -2131,6 +2139,8 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
                     hasBlocked = true;
                 }
             });
+
+            console.log(`🔔 [Alert] Domain ${hostname} results:`, JSON.stringify(resultsByISP));
 
             // Only send alert if there are blocked ISPs
             if (!hasBlocked) {
