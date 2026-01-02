@@ -1988,37 +1988,53 @@ async function sendTelegramAlert(
     if (!botToken || !chatId) return false;
 
     // แสดงเฉพาะ AIS, True, DTAC พร้อม emoji
-    // Note: ใน D1 เก็บเป็น 'True' และ 'DTAC' แยกกัน (case-insensitive)
-    // Log all available keys for debugging
+    // Note: Mobile app อาจส่งมาแค่ AIS และ DTAC (ไม่มี True)
+    // ถ้าไม่มี True ให้แสดงเฉพาะ ISP ที่มีข้อมูล
     const availableKeys = Object.keys(results);
     console.log(`🔔 [Alert] Available ISP keys in results for ${hostname}:`, availableKeys);
-    console.log(`🔔 [Alert] Results data:`, JSON.stringify(results));
     
-    const ispStatusList = [
+    // Map ISP names from D1 to display names
+    // Try to find each ISP in results (case-insensitive)
+    const ispConfigs = [
         { keys: ['AIS', 'ais'], name: 'AIS' },
-        { keys: ['True', 'TRUE', 'true'], name: 'True' }, // In D1 stored as 'True' or 'TRUE'
-        { keys: ['DTAC', 'dtac'], name: 'DTAC' }, // In D1 stored as 'DTAC' separately
-    ].map(({ keys, name }) => {
-        // Find first matching key with a result (case-insensitive)
-        let status = 'PENDING';
-        for (const key of keys) {
-            // Try exact match first
-            if (results[key]) {
-                status = results[key].status;
-                console.log(`🔔 [Alert] Found ${name} with exact key '${key}': ${status}`);
-                break;
+        { keys: ['True', 'TRUE', 'true'], name: 'True' }, // May not exist in D1
+        { keys: ['DTAC', 'dtac'], name: 'DTAC' },
+    ];
+    
+    const ispStatusList = ispConfigs
+        .map(({ keys, name }) => {
+            // Find first matching key with a result (case-insensitive)
+            let status: string | null = null;
+            let foundKey: string | null = null;
+            
+            for (const key of keys) {
+                // Try exact match first
+                if (results[key]) {
+                    status = results[key].status;
+                    foundKey = key;
+                    break;
+                }
+                // Try case-insensitive match
+                const matchedKey = Object.keys(results).find(k => k.toLowerCase() === key.toLowerCase());
+                if (matchedKey) {
+                    status = results[matchedKey].status;
+                    foundKey = matchedKey;
+                    break;
+                }
             }
-            // Try case-insensitive match
-            const foundKey = Object.keys(results).find(k => k.toLowerCase() === key.toLowerCase());
-            if (foundKey) {
-                status = results[foundKey].status;
-                console.log(`🔔 [Alert] Found ${name} with case-insensitive key '${foundKey}': ${status}`);
-                break;
+            
+            return { name, status, foundKey };
+        })
+        .filter(item => item.status !== null) // Only include ISPs that have results
+        .map(({ name, status }) => {
+            if (status === 'BLOCKED') {
+                return `🚫 ${name}`;
+            } else if (status === 'ACTIVE') {
+                return `✅ ${name}`;
+            } else {
+                return `⏳ ${name}`;
             }
-        }
-        if (status === 'PENDING') {
-            console.log(`🔔 [Alert] ${name} not found in results, using PENDING`);
-        }
+        })
 
         if (status === 'BLOCKED') {
             return `🚫 ${name}`;
