@@ -42,7 +42,7 @@ export default {
     // Scheduled handler for Cron Trigger (runs every 10 minutes)
     async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
         console.log('⏰ [Cron] Scheduled event triggered');
-        
+
         try {
             // Get next scan time from D1
             const key = 'next_scan_time';
@@ -70,7 +70,7 @@ export default {
             // Check if it's time to scan (within 5 minutes window)
             if (timeUntilScan <= 0 && timeUntilScan >= -300000) { // -5 minutes tolerance
                 console.log(`⏰ [Cron] Time to scan! nextScanTime: ${new Date(nextScanTime).toISOString()}, now: ${new Date(now).toISOString()}`);
-                
+
                 // Trigger mobile app to check DNS
                 const triggerKey = 'trigger:check';
                 const triggerData = {
@@ -473,6 +473,11 @@ async function handleMobileSync(
             console.warn('KV write error (non-critical, D1 save succeeded):', kvError);
             // Continue - don't throw error since D1 save succeeded
         }
+
+        // Check and send alerts for blocked domains (async, don't wait)
+        checkAndSendAlerts(env).catch(error => {
+            console.error('🔔 [Alert] Error in background alert check:', error);
+        });
 
         return jsonResponse({
             success: true,
@@ -1964,6 +1969,210 @@ async function handleSaveFrontendSettings(
             500,
             corsHeaders
         );
+    }
+}
+
+// Send Telegram alert
+async function sendTelegramAlert(
+    botToken: string,
+    chatId: string,
+    hostname: string,
+    results: Record<string, { status: string }>
+): Promise<boolean> {
+    if (!botToken || !chatId) return false;
+
+    // แสดงเฉพาะ AIS, True, DTAC พร้อม emoji
+    // Note: 'True' และ 'DTAC' ใน D1 อาจแยกกัน แต่เราแสดงเป็น True และ DTAC แยก
+    const ispStatusList = [
+        { keys: ['AIS'], name: 'AIS' },
+        { keys: ['True', 'True/DTAC'], name: 'True' }, // Support both 'True' and 'True/DTAC'
+        { keys: ['DTAC'], name: 'DTAC' },
+    ].map(({ keys, name }) => {
+        // Find first matching key with a result
+        let status = 'PENDING';
+        for (const key of keys) {
+            if (results[key]) {
+                status = results[key].status;
+                break;
+            }
+        }
+
+        if (status === 'BLOCKED') {
+            return `🚫 ${name}`;
+        } else if (status === 'ACTIVE') {
+            return `✅ ${name}`;
+        } else {
+            return `⏳ ${name}`;
+        }
+    }).join('\n');
+
+    const message = `
+🚨 <b>DOMAIN ALERT</b> 🚨
+
+<b>Domain:</b> ${hostname}
+<b>Status:</b> BLOCKED / UNREACHABLE
+<b>Detected on:</b>
+${ispStatusList}
+
+<i>Please check the dashboard for more details.</i>
+`;
+
+    try {
+        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                chat_id: chatId,
+                text: message,
+                parse_mode: 'HTML',
+            }),
+        });
+
+        const data = await response.json();
+        return data.ok;
+    } catch (error) {
+        console.error('Failed to send Telegram alert', error);
+        return false;
+    }
+}
+
+// Check and send alerts for blocked domains
+async function checkAndSendAlerts(env: Env): Promise<void> {
+    try {
+        console.log('🔔 [Alert] Checking for blocked domains and sending alerts...');
+
+        // Get settings from D1
+        const settingsResult = await env.DB.prepare(
+            "SELECT key, value FROM settings"
+        ).all();
+
+        const settings: any = {};
+        if (settingsResult.results) {
+            settingsResult.results.forEach((row: any) => {
+                try {
+                    settings[row.key] = JSON.parse(row.value);
+                } catch {
+                    settings[row.key] = row.value;
+                }
+            });
+        }
+
+        const telegramBotToken = settings.telegramBotToken || '';
+        const defaultTelegramChatId = settings.telegramChatId || '';
+
+        if (!telegramBotToken) {
+            console.log('🔔 [Alert] No Telegram bot token configured, skipping alerts');
+            return;
+        }
+
+        // Get all monitoring domains from D1
+        const domainsResult = await env.DB.prepare(
+            "SELECT id, hostname, telegram_chat_id FROM domains WHERE is_monitoring = 1"
+        ).all();
+
+        if (!domainsResult.results || domainsResult.results.length === 0) {
+            console.log('🔔 [Alert] No domains to monitor');
+            return;
+        }
+
+        // For each domain, get latest results and check for blocked ISPs
+        for (const domainRow of domainsResult.results) {
+            const hostname = domainRow.hostname;
+            const domainTelegramChatId = domainRow.telegram_chat_id || null;
+
+            // Get latest results for this domain (latest result per ISP)
+            const resultsQuery = env.DB.prepare(`
+                SELECT r1.* FROM results r1 
+                INNER JOIN (
+                    SELECT hostname, isp_name, MAX(timestamp) as max_timestamp 
+                    FROM results 
+                    WHERE hostname = ? 
+                    GROUP BY hostname, isp_name
+                ) r2 ON r1.hostname = r2.hostname 
+                    AND r1.isp_name = r2.isp_name 
+                    AND r1.timestamp = r2.max_timestamp
+            `).bind(hostname);
+
+            const resultsData = await resultsQuery.all();
+
+            if (!resultsData.results || resultsData.results.length === 0) {
+                continue; // No results for this domain yet
+            }
+
+            // Group results by ISP name
+            // Note: 'True' and 'DTAC' may both exist in D1, but we want to show them separately
+            // However, for 'True/DTAC' we should handle it specially
+            const resultsByISP: Record<string, { status: string }> = {};
+            let hasBlocked = false;
+
+            resultsData.results.forEach((row: any) => {
+                const ispName = row.isp_name;
+                const status = row.status;
+
+                // If we already have this ISP name, prefer BLOCKED status
+                if (resultsByISP[ispName]) {
+                    if (status === 'BLOCKED') {
+                        resultsByISP[ispName] = { status };
+                    }
+                } else {
+                    resultsByISP[ispName] = { status };
+                }
+
+                if (status === 'BLOCKED') {
+                    hasBlocked = true;
+                }
+            });
+
+            // Only send alert if there are blocked ISPs
+            if (!hasBlocked) {
+                continue;
+            }
+
+            // Determine which chat IDs to send to
+            const chatIdsToSend: string[] = [];
+
+            // Add domain's custom chat ID if available
+            if (domainTelegramChatId) {
+                chatIdsToSend.push(domainTelegramChatId);
+            }
+
+            // Add default chat ID if available and different from domain chat ID
+            if (defaultTelegramChatId && defaultTelegramChatId !== domainTelegramChatId) {
+                chatIdsToSend.push(defaultTelegramChatId);
+            }
+
+            // If no chat IDs, skip
+            if (chatIdsToSend.length === 0) {
+                console.log(`🔔 [Alert] No Telegram chat ID configured for ${hostname}, skipping`);
+                continue;
+            }
+
+            // Send alerts to all chat IDs
+            const sendPromises = chatIdsToSend.map(chatId =>
+                sendTelegramAlert(telegramBotToken, chatId, hostname, resultsByISP)
+                    .then(sent => {
+                        if (sent) {
+                            console.log(`🔔 [Alert] Telegram alert sent for ${hostname} to ${chatId}`);
+                        } else {
+                            console.error(`🔔 [Alert] Failed to send Telegram alert for ${hostname} to ${chatId}`);
+                        }
+                        return sent;
+                    })
+                    .catch(error => {
+                        console.error(`🔔 [Alert] Error sending Telegram alert for ${hostname} to ${chatId}:`, error);
+                        return false;
+                    })
+            );
+
+            await Promise.all(sendPromises);
+        }
+
+        console.log('🔔 [Alert] Finished checking and sending alerts');
+    } catch (error) {
+        console.error('🔔 [Alert] Error in checkAndSendAlerts:', error);
     }
 }
 
