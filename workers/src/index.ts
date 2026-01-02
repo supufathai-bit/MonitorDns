@@ -1991,7 +1991,7 @@ async function sendTelegramAlert(
     // Note: True และ DTAC เป็นค่ายเดียวกัน (True Corporation) → ใช้ข้อมูลเดียวกัน
     const availableKeys = Object.keys(results);
     console.log(`🔔 [Alert] Available ISP keys in results for ${hostname}:`, availableKeys);
-    
+
     // หา status ของแต่ละ ISP (case-insensitive)
     const findISPStatus = (keys: string[]): string | null => {
         for (const key of keys) {
@@ -2007,16 +2007,19 @@ async function sendTelegramAlert(
         }
         return null;
     };
-    
+
     // หา status ของ AIS
     const aisStatus = findISPStatus(['AIS', 'ais']);
-    
-    // หา status ของ DTAC (ใช้สำหรับทั้ง True และ DTAC เพราะเป็นค่ายเดียวกัน)
+
+    // หา status ของ True (ค้นหาจาก key 'True' โดยตรง)
+    const trueStatus = findISPStatus(['True', 'true', 'TRUE']);
+
+    // หา status ของ DTAC
     const dtacStatus = findISPStatus(['DTAC', 'dtac']);
-    
+
     // สร้างรายการ ISP ที่มีข้อมูล
     const ispStatusList: string[] = [];
-    
+
     // AIS
     if (aisStatus) {
         if (aisStatus === 'BLOCKED') {
@@ -2025,16 +2028,16 @@ async function sendTelegramAlert(
             ispStatusList.push(`✅ AIS`);
         }
     }
-    
-    // True - ใช้ข้อมูลจาก DTAC (เพราะเป็นค่ายเดียวกัน)
-    if (dtacStatus) {
-        if (dtacStatus === 'BLOCKED') {
+
+    // True
+    if (trueStatus) {
+        if (trueStatus === 'BLOCKED') {
             ispStatusList.push(`🚫 True`);
-        } else if (dtacStatus === 'ACTIVE') {
+        } else if (trueStatus === 'ACTIVE') {
             ispStatusList.push(`✅ True`);
         }
     }
-    
+
     // DTAC
     if (dtacStatus) {
         if (dtacStatus === 'BLOCKED') {
@@ -2043,7 +2046,7 @@ async function sendTelegramAlert(
             ispStatusList.push(`✅ DTAC`);
         }
     }
-    
+
     const ispStatusListString = ispStatusList.join('\n');
 
     const message = `
