@@ -2046,15 +2046,6 @@ async function sendTelegramAlert(
     
     const ispStatusListString = ispStatusList.join('\n');
 
-        if (status === 'BLOCKED') {
-            return `🚫 ${name}`;
-        } else if (status === 'ACTIVE') {
-            return `✅ ${name}`;
-        } else {
-            return `⏳ ${name}`;
-        }
-    }).join('\n');
-
     const message = `
 🚨 <b>DOMAIN ALERT</b> 🚨
 
