@@ -1988,11 +1988,16 @@ async function sendTelegramAlert(
     if (!botToken || !chatId) return false;
 
     // แสดงเฉพาะ AIS, True, DTAC พร้อม emoji
-    // Note: ใน D1 อาจเก็บเป็น 'True', 'TRUE', 'DTAC', 'True/DTAC' (case-insensitive)
+    // Note: ใน D1 เก็บเป็น 'True' และ 'DTAC' แยกกัน (case-insensitive)
+    // Log all available keys for debugging
+    const availableKeys = Object.keys(results);
+    console.log(`🔔 [Alert] Available ISP keys in results for ${hostname}:`, availableKeys);
+    console.log(`🔔 [Alert] Results data:`, JSON.stringify(results));
+    
     const ispStatusList = [
         { keys: ['AIS', 'ais'], name: 'AIS' },
-        { keys: ['True', 'TRUE', 'true', 'True/DTAC'], name: 'True' }, // Support multiple variations
-        { keys: ['DTAC', 'dtac'], name: 'DTAC' },
+        { keys: ['True', 'TRUE', 'true'], name: 'True' }, // In D1 stored as 'True' or 'TRUE'
+        { keys: ['DTAC', 'dtac'], name: 'DTAC' }, // In D1 stored as 'DTAC' separately
     ].map(({ keys, name }) => {
         // Find first matching key with a result (case-insensitive)
         let status = 'PENDING';
@@ -2000,14 +2005,19 @@ async function sendTelegramAlert(
             // Try exact match first
             if (results[key]) {
                 status = results[key].status;
+                console.log(`🔔 [Alert] Found ${name} with exact key '${key}': ${status}`);
                 break;
             }
             // Try case-insensitive match
             const foundKey = Object.keys(results).find(k => k.toLowerCase() === key.toLowerCase());
             if (foundKey) {
                 status = results[foundKey].status;
+                console.log(`🔔 [Alert] Found ${name} with case-insensitive key '${foundKey}': ${status}`);
                 break;
             }
+        }
+        if (status === 'PENDING') {
+            console.log(`🔔 [Alert] ${name} not found in results, using PENDING`);
         }
 
         if (status === 'BLOCKED') {
