@@ -36,10 +36,10 @@ export async function POST(req: Request) {
 
     // In Cloudflare Worker, you would save to KV:
     // await env.SETTINGS_KV.put('settings', JSON.stringify(settings));
-    
+
     // For now, we just validate and return success
     // In production, use Cloudflare KV or environment variables
-    
+
     return NextResponse.json({
       success: true,
       message: 'Settings saved (local storage in browser)',

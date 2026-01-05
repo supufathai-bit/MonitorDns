@@ -1225,8 +1225,10 @@ export default function Home() {
                                             chatIdsToSend.push(currentSettings.telegramChatId);
                                         }
 
-                                        if (currentSettings.telegramBotToken && chatIdsToSend.length > 0) {
-                                            // Send to all chat IDs
+                                        // NOTE: Telegram alerts are now handled by Worker (consolidated message)
+                                        // Frontend no longer sends individual alerts to prevent spam
+                                        if (false && currentSettings.telegramBotToken && chatIdsToSend.length > 0) {
+                                            // DISABLED - Worker handles alerts now
                                             Promise.all(chatIdsToSend.map(chatId =>
                                                 sendTelegramAlert(currentSettings.telegramBotToken, chatId, currentDomain, blockedISPs)
                                                     .then(sent => ({ chatId, sent }))
@@ -1586,8 +1588,10 @@ export default function Home() {
                                             chatIdsToSend.push(currentSettings.telegramChatId);
                                         }
 
-                                        if (currentSettings.telegramBotToken && chatIdsToSend.length > 0) {
-                                            // Send to all chat IDs
+                                        // NOTE: Telegram alerts are now handled by Worker (consolidated message)
+                                        // Frontend no longer sends individual alerts to prevent spam
+                                        if (false && currentSettings.telegramBotToken && chatIdsToSend.length > 0) {
+                                            // DISABLED - Worker handles alerts now
                                             Promise.all(chatIdsToSend.map(chatId =>
                                                 sendTelegramAlert(currentSettings.telegramBotToken, chatId, domain, blockedISPs)
                                                     .then(sent => ({ chatId, sent }))

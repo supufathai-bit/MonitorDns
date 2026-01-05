@@ -129,15 +129,18 @@ export default {
                 ).run();
 
                 console.log(`⏰ [Cron] Next scan time updated: ${new Date(newNextScanTime).toISOString()}`);
+
+                // Check and send alerts for blocked domains (only when scan time is reached)
+                try {
+                    await checkAndSendAlerts(env);
+                } catch (alertError) {
+                    console.error('⏰ [Cron] Error in alert check:', alertError);
+                }
             } else {
                 console.log(`⏰ [Cron] Not time yet. Time until scan: ${Math.round(timeUntilScan / 1000 / 60)} minutes`);
             }
 
-            // Always check and send alerts based on latest results in D1
-            // This ensures alerts are sent even if mobile app sync happened earlier
-            checkAndSendAlerts(env).catch(error => {
-                console.error('⏰ [Cron] Error in background alert check:', error);
-            });
+            // Alerts are sent only when scan time is reached (inside the if block above)
         } catch (error) {
             console.error('⏰ [Cron] Error in scheduled handler:', error);
         }
@@ -244,6 +247,11 @@ export default {
             return handleLogout(request, env, corsHeaders);
         }
 
+        // Debug endpoints
+        if (url.pathname === '/api/debug/status' && request.method === 'GET') {
+            return handleDebugStatus(request, env, corsHeaders);
+        }
+
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
@@ -286,6 +294,10 @@ async function handleMobileSync(
         try {
             // Save to D1 first (primary storage - no write limits!)
             try {
+
+
+
+
                 const d1Stmt = env.DB.prepare(
                     "INSERT OR REPLACE INTO results (id, hostname, isp_name, status, ip, latency, device_id, device_info, timestamp, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 );
@@ -298,9 +310,6 @@ async function handleMobileSync(
                     }
 
                     // Determine status based on IP address:
-                    // - If IP exists = ACTIVE (DNS resolution successful)
-                    // - If no IP = BLOCKED (DNS resolution failed)
-                    // This ensures consistency: got IP = ACTIVE, no IP = BLOCKED
                     let finalStatus = result.status;
                     if (result.ip && result.ip.trim() !== '') {
                         // Got IP address = DNS resolution successful = ACTIVE
@@ -325,8 +334,14 @@ async function handleMobileSync(
                     );
                 });
 
-                await env.DB.batch(d1Batch);
-                console.log(`Mobile sync: Saved ${results.length} results to D1`);
+                if (d1Batch.length > 0) {
+                    await env.DB.batch(d1Batch);
+                    console.log(`Mobile sync: Saved ${d1Batch.length} updates to D1`);
+                    // NOTE: Alerts are handled by Cron trigger only (to prevent spam)
+                } else {
+                    console.log(`Mobile sync: No updates needed (all ${results.length} results unchanged)`);
+                }
+
             } catch (d1Error) {
                 console.error('D1 save error (non-critical, continuing with KV):', d1Error);
                 // Continue with KV even if D1 fails
@@ -491,10 +506,8 @@ async function handleMobileSync(
             // Continue - don't throw error since D1 save succeeded
         }
 
-        // Check and send alerts for blocked domains (async, don't wait)
-        checkAndSendAlerts(env).catch(error => {
-            console.error('🔔 [Alert] Error in background alert check:', error);
-        });
+        // Alert checking is handled by Cron trigger only to avoid duplicate alerts
+        // (Cron runs every 1 minute and only triggers when next_scan_time is reached)
 
         return jsonResponse({
             success: true,
@@ -1591,7 +1604,7 @@ async function handleResultsStream(
                 }
 
                 // Schedule next poll (recursive setTimeout)
-                setTimeout(poll, 1000);
+                setTimeout(poll, 3000);
             };
 
             // Start polling
@@ -1989,109 +2002,7 @@ async function handleSaveFrontendSettings(
     }
 }
 
-// Send Telegram alert
-async function sendTelegramAlert(
-    botToken: string,
-    chatId: string,
-    hostname: string,
-    results: Record<string, { status: string }>
-): Promise<boolean> {
-    if (!botToken || !chatId) return false;
-
-    // แสดงเฉพาะ AIS, True, DTAC พร้อม emoji
-    // Note: True และ DTAC เป็นค่ายเดียวกัน (True Corporation) → ใช้ข้อมูลเดียวกัน
-    const availableKeys = Object.keys(results);
-    console.log(`🔔 [Alert] Available ISP keys in results for ${hostname}:`, availableKeys);
-
-    // หา status ของแต่ละ ISP (case-insensitive)
-    const findISPStatus = (keys: string[]): string | null => {
-        for (const key of keys) {
-            // Try exact match first
-            if (results[key]) {
-                return results[key].status;
-            }
-            // Try case-insensitive match
-            const matchedKey = Object.keys(results).find(k => k.toLowerCase() === key.toLowerCase());
-            if (matchedKey) {
-                return results[matchedKey].status;
-            }
-        }
-        return null;
-    };
-
-    // หา status ของ AIS
-    const aisStatus = findISPStatus(['AIS', 'ais']);
-
-    // หา status ของ True (ค้นหาจาก key 'True' โดยตรง)
-    const trueStatus = findISPStatus(['True', 'true', 'TRUE']);
-
-    // หา status ของ DTAC
-    const dtacStatus = findISPStatus(['DTAC', 'dtac']);
-
-    // สร้างรายการ ISP ที่มีข้อมูล
-    const ispStatusList: string[] = [];
-
-    // AIS
-    if (aisStatus) {
-        if (aisStatus === 'BLOCKED') {
-            ispStatusList.push(`🚫 AIS`);
-        } else if (aisStatus === 'ACTIVE') {
-            ispStatusList.push(`✅ AIS`);
-        }
-    }
-
-    // True
-    if (trueStatus) {
-        if (trueStatus === 'BLOCKED') {
-            ispStatusList.push(`🚫 True`);
-        } else if (trueStatus === 'ACTIVE') {
-            ispStatusList.push(`✅ True`);
-        }
-    }
-
-    // DTAC
-    if (dtacStatus) {
-        if (dtacStatus === 'BLOCKED') {
-            ispStatusList.push(`🚫 DTAC`);
-        } else if (dtacStatus === 'ACTIVE') {
-            ispStatusList.push(`✅ DTAC`);
-        }
-    }
-
-    const ispStatusListString = ispStatusList.join('\n');
-
-    const message = `
-🚨 <b>DOMAIN ALERT</b> 🚨
-
-<b>Domain:</b> ${hostname}
-<b>Status:</b> BLOCKED / UNREACHABLE
-<b>Detected on:</b>
-${ispStatusListString}
-
-<i>Please check the dashboard for more details.</i>
-`;
-
-    try {
-        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text: message,
-                parse_mode: 'HTML',
-            }),
-        });
-
-        const data = await response.json();
-        return data.ok;
-    } catch (error) {
-        console.error('Failed to send Telegram alert', error);
-        return false;
-    }
-}
+// NOTE: Old sendTelegramAlert function removed. Now using consolidated message in checkAndSendAlerts below.
 
 // Check and send alerts for blocked domains
 async function checkAndSendAlerts(env: Env): Promise<void> {
@@ -2117,6 +2028,8 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
         const telegramBotToken = settings.telegramBotToken || '';
         const defaultTelegramChatId = settings.telegramChatId || '';
 
+        console.log(`🔔 [Alert] Telegram settings - Token: ${telegramBotToken ? 'configured' : 'NOT SET'}, ChatID: ${defaultTelegramChatId ? 'configured' : 'NOT SET'}`);
+
         if (!telegramBotToken) {
             console.log('🔔 [Alert] No Telegram bot token configured, skipping alerts');
             return;
@@ -2132,10 +2045,21 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
             return;
         }
 
-        // For each domain, get latest results and check for blocked ISPs
+        console.log(`🔔 [Alert] Found ${domainsResult.results.length} domains to check`);
+
+        // Collect all domain statuses for consolidated message
+        type DomainStatus = {
+            hostname: string;
+            aisStatus: string | null;
+            trueStatus: string | null;
+            dtacStatus: string | null;
+        };
+
+        const allDomainStatuses: DomainStatus[] = [];
+
+        // For each domain, get latest results
         for (const domainRow of domainsResult.results) {
-            const hostname = domainRow.hostname;
-            const domainTelegramChatId = domainRow.telegram_chat_id || null;
+            const hostname = domainRow.hostname as string;
 
             // Get latest results for this domain (latest result per ISP)
             const resultsQuery = env.DB.prepare(`
@@ -2156,75 +2080,90 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
                 continue; // No results for this domain yet
             }
 
-            // Group results by ISP name
-            // Note: 'True' and 'DTAC' may both exist in D1, but we want to show them separately
-            // However, for 'True/DTAC' we should handle it specially
-            const resultsByISP: Record<string, { status: string }> = {};
-            let hasBlocked = false;
-
-            resultsData.results.forEach((row: any) => {
-                const ispName = row.isp_name;
-                const status = row.status;
-
-                // Store results with original ISP name from D1
-                // If we already have this ISP name, prefer BLOCKED status
-                if (resultsByISP[ispName]) {
-                    if (status === 'BLOCKED') {
-                        resultsByISP[ispName] = { status };
-                    }
-                } else {
-                    resultsByISP[ispName] = { status };
+            // Extract ISP statuses
+            const findISPStatus = (ispNames: string[]): string | null => {
+                for (const name of ispNames) {
+                    const row = resultsData.results?.find((r: any) =>
+                        r.isp_name?.toLowerCase() === name.toLowerCase()
+                    );
+                    if (row) return (row as any).status;
                 }
+                return null;
+            };
 
-                if (status === 'BLOCKED') {
-                    hasBlocked = true;
-                }
+            const aisStatus = findISPStatus(['AIS', 'ais']);
+            const dtacStatus = findISPStatus(['DTAC', 'dtac']);
+            let trueStatus = findISPStatus(['True', 'true', 'TRUE']);
+
+            // If no True data, use DTAC (same network)
+            if (!trueStatus && dtacStatus) {
+                trueStatus = dtacStatus;
+            }
+
+            allDomainStatuses.push({
+                hostname,
+                aisStatus,
+                trueStatus,
+                dtacStatus
             });
 
-            console.log(`🔔 [Alert] Domain ${hostname} results:`, JSON.stringify(resultsByISP));
+            console.log(`🔔 [Alert] Domain ${hostname}: AIS=${aisStatus}, True=${trueStatus}, DTAC=${dtacStatus}`);
+        }
 
-            // Only send alert if there are blocked ISPs
-            if (!hasBlocked) {
-                continue;
+        // If no domain statuses collected, skip
+        if (allDomainStatuses.length === 0) {
+            console.log('🔔 [Alert] No domain statuses to report');
+            return;
+        }
+
+        // Build consolidated message
+        let messageLines: string[] = [];
+        messageLines.push('🔔 <b>สถานะเว็บไซต์</b>\n');
+
+        for (const domain of allDomainStatuses) {
+            messageLines.push(`<b>${domain.hostname}</b>`);
+
+            if (domain.aisStatus) {
+                const emoji = domain.aisStatus === 'BLOCKED' ? '🚫' : '✅';
+                messageLines.push(`${emoji} AIS`);
+            }
+            if (domain.trueStatus) {
+                const emoji = domain.trueStatus === 'BLOCKED' ? '🚫' : '✅';
+                messageLines.push(`${emoji} True`);
+            }
+            if (domain.dtacStatus) {
+                const emoji = domain.dtacStatus === 'BLOCKED' ? '🚫' : '✅';
+                messageLines.push(`${emoji} DTAC`);
             }
 
-            // Determine which chat IDs to send to
-            const chatIdsToSend: string[] = [];
+            messageLines.push(''); // Empty line between domains
+        }
 
-            // Add domain's custom chat ID if available
-            if (domainTelegramChatId) {
-                chatIdsToSend.push(domainTelegramChatId);
+        const consolidatedMessage = messageLines.join('\n');
+
+        // Send consolidated message to default chat ID
+        if (defaultTelegramChatId) {
+            try {
+                const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: defaultTelegramChatId,
+                        text: consolidatedMessage,
+                        parse_mode: 'HTML',
+                    }),
+                });
+
+                const data = await response.json() as any;
+                if (data.ok) {
+                    console.log(`🔔 [Alert] Consolidated alert sent to ${defaultTelegramChatId}`);
+                } else {
+                    console.error(`🔔 [Alert] Failed to send consolidated alert:`, data);
+                }
+            } catch (error) {
+                console.error('🔔 [Alert] Error sending consolidated alert:', error);
             }
-
-            // Add default chat ID if available and different from domain chat ID
-            if (defaultTelegramChatId && defaultTelegramChatId !== domainTelegramChatId) {
-                chatIdsToSend.push(defaultTelegramChatId);
-            }
-
-            // If no chat IDs, skip
-            if (chatIdsToSend.length === 0) {
-                console.log(`🔔 [Alert] No Telegram chat ID configured for ${hostname}, skipping`);
-                continue;
-            }
-
-            // Send alerts to all chat IDs
-            const sendPromises = chatIdsToSend.map(chatId =>
-                sendTelegramAlert(telegramBotToken, chatId, hostname, resultsByISP)
-                    .then(sent => {
-                        if (sent) {
-                            console.log(`🔔 [Alert] Telegram alert sent for ${hostname} to ${chatId}`);
-                        } else {
-                            console.error(`🔔 [Alert] Failed to send Telegram alert for ${hostname} to ${chatId}`);
-                        }
-                        return sent;
-                    })
-                    .catch(error => {
-                        console.error(`🔔 [Alert] Error sending Telegram alert for ${hostname} to ${chatId}:`, error);
-                        return false;
-                    })
-            );
-
-            await Promise.all(sendPromises);
         }
 
         console.log('🔔 [Alert] Finished checking and sending alerts');
@@ -2246,5 +2185,66 @@ function jsonResponse(
             ...corsHeaders,
         },
     });
+}
+
+// Debug Status (to diagnose system issues)
+async function handleDebugStatus(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        const now = Date.now();
+        const status: any = {
+            systemTime: new Date(now).toISOString(),
+            timestamp: now,
+            env: {
+                hasDB: !!env.DB,
+                hasKV: !!env.SENTINEL_DATA
+            }
+        };
+
+        // Check settings (Next Scan Time)
+        try {
+            const result = await env.DB.prepare(
+                "SELECT * FROM settings WHERE key = 'next_scan_time' OR key = 'trigger:check'"
+            ).all();
+
+            status.settings = result.results;
+        } catch (e: any) {
+            status.settingsError = e.message;
+        }
+
+        // Check Results Stats
+        try {
+            const count = await env.DB.prepare("SELECT COUNT(*) as total FROM results").first();
+            const latest = await env.DB.prepare("SELECT MAX(timestamp) as last_update FROM results").first();
+
+            status.results = {
+                count: count?.total,
+                lastUpdate: latest?.last_update ? new Date(latest.last_update as number).toISOString() : 'Never'
+            };
+        } catch (e: any) {
+            status.resultsError = e.message;
+        }
+
+        // Check Domains
+        try {
+            const domains = await env.DB.prepare("SELECT COUNT(*) as total FROM domains WHERE is_monitoring = 1").first();
+            status.domains = {
+                monitoringCount: domains?.total
+            };
+        } catch (e: any) {
+            status.domainsError = e.message;
+        }
+
+        return jsonResponse({
+            success: true,
+            status
+        }, 200, corsHeaders);
+
+    } catch (error: any) {
+        return jsonResponse({ error: error.message }, 500, corsHeaders);
+    }
 }
 
