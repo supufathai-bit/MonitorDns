@@ -1666,6 +1666,25 @@ export default function Home() {
 
                                 setLoading(false);
                                 addLog('Scan complete.', 'success');
+
+                                // Trigger Worker to send consolidated Telegram alert
+                                // Always call - Worker will check for blocked domains
+                                try {
+                                    addLog('Triggering alert check...', 'info');
+                                    const alertResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/trigger-alert`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                    });
+                                    if (alertResponse.ok) {
+                                        addLog('Telegram alert sent (consolidated)', 'success');
+                                    } else {
+                                        addLog('Alert check completed (no blocked domains)', 'info');
+                                    }
+                                } catch (alertError) {
+                                    console.error('Error triggering alert:', alertError);
+                                    addLog('Failed to trigger alert', 'error');
+                                }
+
                                 return;
                             } else {
                                 console.log('Results are older than trigger, waiting for new results...');
