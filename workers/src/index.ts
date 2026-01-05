@@ -252,6 +252,16 @@ export default {
             return handleDebugStatus(request, env, corsHeaders);
         }
 
+        // Manual alert trigger (called by frontend after scan completes)
+        if (url.pathname === '/api/trigger-alert' && request.method === 'POST') {
+            try {
+                await checkAndSendAlerts(env);
+                return jsonResponse({ success: true, message: 'Alert check triggered' }, 200, corsHeaders);
+            } catch (error: any) {
+                return jsonResponse({ success: false, error: error.message }, 500, corsHeaders);
+            }
+        }
+
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
