@@ -2060,6 +2060,7 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
         // Collect all domain statuses for consolidated message
         type DomainStatus = {
             hostname: string;
+            telegramChatId: string | null;
             aisStatus: string | null;
             trueStatus: string | null;
             dtacStatus: string | null;
@@ -2070,6 +2071,7 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
         // For each domain, get latest results
         for (const domainRow of domainsResult.results) {
             const hostname = domainRow.hostname as string;
+            const domainChatId = domainRow.telegram_chat_id as string | null;
 
             // Get latest results for this domain (latest result per ISP)
             const resultsQuery = env.DB.prepare(`
@@ -2112,12 +2114,13 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
 
             allDomainStatuses.push({
                 hostname,
+                telegramChatId: domainChatId,
                 aisStatus,
                 trueStatus,
                 dtacStatus
             });
 
-            console.log(`🔔 [Alert] Domain ${hostname}: AIS=${aisStatus}, True=${trueStatus}, DTAC=${dtacStatus}`);
+            console.log(`🔔 [Alert] Domain ${hostname}: chatId=${domainChatId}, AIS=${aisStatus}, True=${trueStatus}, DTAC=${dtacStatus}`);
         }
 
         // If no domain statuses collected, skip
@@ -2126,53 +2129,87 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
             return;
         }
 
-        // Build consolidated message
-        let messageLines: string[] = [];
-        messageLines.push('🔔 <b>สถานะเว็บไซต์</b>\n');
+        // Helper function to build message for a list of domains
+        const buildMessage = (domains: DomainStatus[]): string => {
+            let lines: string[] = [];
+            lines.push('🔔 <b>สถานะเว็บไซต์</b>\n');
 
-        for (const domain of allDomainStatuses) {
-            messageLines.push(`<b>${domain.hostname}</b>`);
+            for (const domain of domains) {
+                lines.push(`<b>${domain.hostname}</b>`);
 
-            if (domain.aisStatus) {
-                const emoji = domain.aisStatus === 'BLOCKED' ? '🚫' : '✅';
-                messageLines.push(`${emoji} AIS`);
+                if (domain.aisStatus) {
+                    const emoji = domain.aisStatus === 'BLOCKED' ? '🚫' : '✅';
+                    lines.push(`${emoji} AIS`);
+                }
+                if (domain.trueStatus) {
+                    const emoji = domain.trueStatus === 'BLOCKED' ? '🚫' : '✅';
+                    lines.push(`${emoji} True`);
+                }
+                if (domain.dtacStatus) {
+                    const emoji = domain.dtacStatus === 'BLOCKED' ? '🚫' : '✅';
+                    lines.push(`${emoji} DTAC`);
+                }
+
+                lines.push(''); // Empty line between domains
             }
-            if (domain.trueStatus) {
-                const emoji = domain.trueStatus === 'BLOCKED' ? '🚫' : '✅';
-                messageLines.push(`${emoji} True`);
-            }
-            if (domain.dtacStatus) {
-                const emoji = domain.dtacStatus === 'BLOCKED' ? '🚫' : '✅';
-                messageLines.push(`${emoji} DTAC`);
-            }
 
-            messageLines.push(''); // Empty line between domains
-        }
+            return lines.join('\n');
+        };
 
-        const consolidatedMessage = messageLines.join('\n');
-
-        // Send consolidated message to default chat ID
-        if (defaultTelegramChatId) {
+        // Helper function to send Telegram message
+        const sendTelegram = async (chatId: string, message: string): Promise<boolean> => {
             try {
                 const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        chat_id: defaultTelegramChatId,
-                        text: consolidatedMessage,
+                        chat_id: chatId,
+                        text: message,
                         parse_mode: 'HTML',
                     }),
                 });
 
                 const data = await response.json() as any;
-                if (data.ok) {
-                    console.log(`🔔 [Alert] Consolidated alert sent to ${defaultTelegramChatId}`);
-                } else {
-                    console.error(`🔔 [Alert] Failed to send consolidated alert:`, data);
-                }
+                return data.ok;
             } catch (error) {
-                console.error('🔔 [Alert] Error sending consolidated alert:', error);
+                console.error(`🔔 [Alert] Error sending to ${chatId}:`, error);
+                return false;
+            }
+        };
+
+        // Group domains by their custom chat ID
+        const domainsByChatId = new Map<string, DomainStatus[]>();
+
+        for (const domain of allDomainStatuses) {
+            if (domain.telegramChatId) {
+                // Add to custom chat ID group
+                if (!domainsByChatId.has(domain.telegramChatId)) {
+                    domainsByChatId.set(domain.telegramChatId, []);
+                }
+                domainsByChatId.get(domain.telegramChatId)!.push(domain);
+            }
+        }
+
+        // Send to each custom chat ID (only their domains)
+        for (const [chatId, domains] of domainsByChatId) {
+            const message = buildMessage(domains);
+            const sent = await sendTelegram(chatId, message);
+            if (sent) {
+                console.log(`🔔 [Alert] Sent to custom chat ${chatId}: ${domains.map(d => d.hostname).join(', ')}`);
+            } else {
+                console.error(`🔔 [Alert] Failed to send to custom chat ${chatId}`);
+            }
+        }
+
+        // Send to default chat ID (ALL domains)
+        if (defaultTelegramChatId) {
+            const allDomainsMessage = buildMessage(allDomainStatuses);
+            const sent = await sendTelegram(defaultTelegramChatId, allDomainsMessage);
+            if (sent) {
+                console.log(`🔔 [Alert] Sent ALL domains to default chat ${defaultTelegramChatId}`);
+            } else {
+                console.error(`🔔 [Alert] Failed to send to default chat ${defaultTelegramChatId}`);
             }
         }
 

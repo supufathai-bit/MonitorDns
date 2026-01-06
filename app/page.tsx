@@ -714,10 +714,10 @@ export default function Home() {
 
         // Get initial lastCheckTime from current domains (to avoid fetching same results)
         let lastCheckTime = Math.max(...domainsRef.current.map(d => d.lastCheck || 0), Date.now() - 60000); // Default to 1 minute ago
-        let pollInterval = 30000; // Start with 30 seconds (reduced from 5 seconds to save requests)
+        let pollInterval = 60000; // Start with 60 seconds (reduced to save requests)
         let consecutiveNoUpdates = 0; // Track consecutive polls with no updates
 
-        console.log('🔄 [Poll] Starting adaptive polling to detect mobile app results (starts at 30s)');
+        console.log('🔄 [Poll] Starting adaptive polling to detect mobile app results (starts at 60s)');
         console.log(`🕐 [Poll] Initial lastCheckTime: ${lastCheckTime} (${new Date(lastCheckTime).toLocaleTimeString()})`);
 
         const poll = async () => {
@@ -734,26 +734,26 @@ export default function Home() {
                         addLog(`📱 New results from mobile app: ${response.results.length} updates`, 'success');
                         lastCheckTime = latestResult;
                         consecutiveNoUpdates = 0;
-                        // Speed up polling when we find new results (10 seconds for next few polls)
-                        pollInterval = 10000;
+                        // Speed up polling when we find new results (30 seconds for next few polls)
+                        pollInterval = 30000;
                         // Load and update results immediately
                         await loadResultsFromWorkers();
                     } else {
                         // No new results - slow down polling gradually
                         consecutiveNoUpdates++;
                         if (consecutiveNoUpdates > 2) {
-                            // After 2 consecutive polls with no updates, slow down to 60 seconds
-                            pollInterval = 60000;
+                            // After 2 consecutive polls with no updates, slow down to 120 seconds
+                            pollInterval = 120000;
                         } else if (consecutiveNoUpdates > 1) {
-                            // After 1 consecutive poll, slow down to 30 seconds
-                            pollInterval = 30000;
+                            // After 1 consecutive poll, slow down to 60 seconds
+                            pollInterval = 60000;
                         }
                         // Silent - don't log every poll to avoid spam
                     }
                 } else {
                     // No results at all - slow down
                     consecutiveNoUpdates++;
-                    pollInterval = 60000; // 60 seconds when no results
+                    pollInterval = 120000; // 120 seconds when no results
                 }
             } catch (error) {
                 console.error('Poll error:', error);
