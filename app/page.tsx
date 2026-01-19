@@ -950,17 +950,10 @@ export default function Home() {
 
                 console.error('❌ Failed to sync domains:', response.status, errorText);
 
-                // Check for KV limit error
-                if (response.status === 429 || (errorData && errorData.error && errorData.error.includes('limit exceeded'))) {
-                    kvLimitExceededRef.current = true; // Mark KV limit as exceeded
-                    addLog(`⚠️ KV write limit exceeded. Domain sync paused.`, 'error');
-                    addLog(`Error: ${errorData?.error || errorText}`, 'error');
-                    addLog(`Please try again tomorrow or upgrade your Cloudflare plan.`, 'error');
-                } else {
-                    addLog(`Failed to sync domains: ${response.status}`, 'error');
-                    if (errorData?.error) {
-                        addLog(`Error: ${errorData.error}`, 'error');
-                    }
+                // Just log the error - D1 doesn't have KV limits
+                addLog(`Failed to sync domains: ${response.status}`, 'error');
+                if (errorData?.error) {
+                    addLog(`Error: ${errorData.error}`, 'error');
                 }
             }
         } catch (error) {
@@ -1312,25 +1305,16 @@ export default function Home() {
                     console.error('Workers URL:', workersUrl);
                     console.error('Response status:', triggerResponse.status);
 
-                    // Check for KV limit error
-                    if (triggerResponse.status === 429 || (errorData && errorData.error && errorData.error.includes('limit exceeded'))) {
-                        kvLimitExceededRef.current = true; // Mark KV limit as exceeded
-                        addLog(`⚠️ KV write limit exceeded for today. Auto-scan paused.`, 'error');
-                        addLog(`Error: ${errorData?.error || errorText}`, 'error');
-                        addLog(`Please try again tomorrow or upgrade your Cloudflare plan.`, 'error');
-                    } else {
-                        addLog(`Failed to trigger mobile app: ${triggerResponse.status}`, 'error');
-                        if (errorData?.error) {
-                            addLog(`Error: ${errorData.error}`, 'error');
-                        } else if (errorText) {
-                            addLog(`Error: ${errorText}`, 'error');
-                        }
+                    // Just log the error - D1 doesn't have KV limits
+                    addLog(`Failed to trigger mobile app: ${triggerResponse.status}`, 'error');
+                    if (errorData?.error) {
+                        addLog(`Error: ${errorData.error}`, 'error');
+                    } else if (errorText) {
+                        addLog(`Error: ${errorText}`, 'error');
                     }
 
                     setLoading(false);
-                    if (!kvLimitExceededRef.current) {
-                        addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
-                    }
+                    addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
                     return;
                 }
 

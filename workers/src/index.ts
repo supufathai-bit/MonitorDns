@@ -104,12 +104,7 @@ export default {
                     console.error('⏰ [Cron] Error saving trigger to D1:', error);
                 }
 
-                // Also save to KV for backward compatibility
-                try {
-                    await env.SENTINEL_DATA.put(triggerKey, JSON.stringify(triggerData));
-                } catch (error) {
-                    console.warn('⏰ [Cron] Failed to save trigger to KV (non-critical):', error);
-                }
+                // KV backup removed - D1 is the only storage now
 
                 // Update next scan time
                 const intervalMs = checkInterval * 60 * 1000;
@@ -360,224 +355,69 @@ async function handleMobileSync(
             }
         }
 
-        // Store results in D1 (primary) and KV (backup)
+        // Store results in D1 only (no more KV - D1 has no write limits!)
         const timestamp = Date.now();
-        let kvWriteCount = 0; // Track KV writes (declared outside try block for error handling)
-        const MAX_KV_WRITES = 50; // Limit writes per sync to avoid hitting daily limit
 
         try {
-            // Save to D1 first (primary storage - no write limits!)
-            try {
+            // Save to D1 (primary and only storage - no write limits!)
+            const d1Stmt = env.DB.prepare(
+                "INSERT OR REPLACE INTO results (id, hostname, isp_name, status, ip, latency, device_id, device_info, timestamp, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
 
-
-
-
-                const d1Stmt = env.DB.prepare(
-                    "INSERT OR REPLACE INTO results (id, hostname, isp_name, status, ip, latency, device_id, device_info, timestamp, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                );
-
-                const d1Batch = results.map(result => {
-                    // Use device_info.isp if isp_name is "Unknown" or empty
-                    let ispName = result.isp_name;
-                    if (!ispName || ispName === 'Unknown' || ispName === 'unknown') {
-                        ispName = device_info?.isp || 'Unknown';
-                    }
-
-                    // Determine status based on IP address:
-                    let finalStatus = result.status;
-                    if (result.ip && result.ip.trim() !== '') {
-                        // Got IP address = DNS resolution successful = ACTIVE
-                        finalStatus = 'ACTIVE';
-                    } else {
-                        // No IP address = DNS resolution failed = BLOCKED
-                        finalStatus = 'BLOCKED';
-                    }
-
-                    const resultId = `${result.hostname}:${ispName}:${device_id}`;
-                    return d1Stmt.bind(
-                        resultId,
-                        result.hostname,
-                        ispName, // Use corrected ISP name
-                        finalStatus,
-                        result.ip || null,
-                        result.latency || null,
-                        device_id,
-                        JSON.stringify(device_info || {}),
-                        timestamp,
-                        'mobile-app'
-                    );
-                });
-
-                if (d1Batch.length > 0) {
-                    await env.DB.batch(d1Batch);
-                    console.log(`Mobile sync: Saved ${d1Batch.length} updates to D1`);
-                    // NOTE: Alerts are handled by Cron trigger only (to prevent spam)
-                } else {
-                    console.log(`Mobile sync: No updates needed (all ${results.length} results unchanged)`);
-                }
-
-            } catch (d1Error) {
-                console.error('D1 save error (non-critical, continuing with KV):', d1Error);
-                // Continue with KV even if D1 fails
-            }
-
-            // Store latest result per domain+ISP in KV (optional backup for faster reads)
-            // D1 is primary, KV is just for backward compatibility and performance
-            // If KV limit exceeded, it's OK - D1 already saved successfully
-            const writePromises: Promise<void>[] = [];
-
-            for (const result of results) {
-                // Stop if we're approaching the limit (optional writes)
-                if (kvWriteCount >= MAX_KV_WRITES) {
-                    console.warn(`Reached KV write limit (${MAX_KV_WRITES}) for this sync. Skipping remaining KV writes (D1 already saved).`);
-                    break;
-                }
-
+            const d1Batch = results.map(result => {
                 // Use device_info.isp if isp_name is "Unknown" or empty
                 let ispName = result.isp_name;
                 if (!ispName || ispName === 'Unknown' || ispName === 'unknown') {
                     ispName = device_info?.isp || 'Unknown';
                 }
 
-                const latestKey = `latest:${result.hostname}:${ispName}`;
-
-                // Check if we need to update (only if different or missing)
-                const existingData = await env.SENTINEL_DATA.get(latestKey);
-                let shouldUpdate = true;
-
-                if (existingData) {
-                    try {
-                        const existing = JSON.parse(existingData);
-                        // Only update if status changed or timestamp is much older (10 minutes)
-                        if (existing.status === result.status &&
-                            existing.ip === result.ip &&
-                            (timestamp - existing.timestamp) < 600000) {
-                            shouldUpdate = false;
-                        }
-                    } catch {
-                        // If parse fails, update anyway
-                    }
+                // Determine status based on IP address:
+                let finalStatus = result.status;
+                if (result.ip && result.ip.trim() !== '') {
+                    // Got IP address = DNS resolution successful = ACTIVE
+                    finalStatus = 'ACTIVE';
+                } else {
+                    // No IP address = DNS resolution failed = BLOCKED
+                    finalStatus = 'BLOCKED';
                 }
 
-                if (shouldUpdate) {
-                    kvWriteCount++;
-                    writePromises.push(
-                        env.SENTINEL_DATA.put(latestKey, JSON.stringify({
-                            ...result,
-                            isp_name: ispName, // Use corrected ISP name
-                            device_id,
-                            device_info,
-                            timestamp,
-                            source: 'mobile-app',
-                        }), {
-                            expirationTtl: 86400 * 7, // 7 days
-                        }).catch(err => {
-                            // KV writes are optional - don't throw error, just log
-                            console.warn(`Failed to write ${latestKey} to KV (non-critical, D1 already saved):`, err.message);
-                        })
-                    );
-                }
+                const resultId = `${result.hostname}:${ispName}:${device_id}`;
+                return d1Stmt.bind(
+                    resultId,
+                    result.hostname,
+                    ispName,
+                    finalStatus,
+                    result.ip || null,
+                    result.latency || null,
+                    device_id,
+                    JSON.stringify(device_info || {}),
+                    timestamp,
+                    'mobile-app'
+                );
+            });
+
+            if (d1Batch.length > 0) {
+                await env.DB.batch(d1Batch);
+                console.log(`Mobile sync: Saved ${d1Batch.length} updates to D1`);
             }
 
-            // Store device info in D1 (primary storage - no write limits!)
-            try {
-                const existingDevice = await env.DB.prepare(
-                    "SELECT device_info, last_sync FROM devices WHERE device_id = ?"
-                ).bind(device_id).first();
+            // Store device info in D1
+            await env.DB.prepare(
+                "INSERT OR REPLACE INTO devices (device_id, device_info, last_sync, updated_at) VALUES (?, ?, ?, ?)"
+            ).bind(
+                device_id,
+                JSON.stringify(device_info || {}),
+                timestamp,
+                timestamp
+            ).run();
 
-                let shouldUpdateDevice = true;
-
-                if (existingDevice) {
-                    try {
-                        const existing = JSON.parse(existingDevice.device_info as string);
-                        // Only update if device info changed or last sync was more than 2 hours ago
-                        if (existing.isp === device_info.isp &&
-                            existing.network_type === device_info.network_type &&
-                            (timestamp - (existingDevice.last_sync as number)) < 7200000) {
-                            shouldUpdateDevice = false;
-                        }
-                    } catch {
-                        // If parse fails, update anyway
-                    }
-                }
-
-                if (shouldUpdateDevice) {
-                    await env.DB.prepare(
-                        "INSERT OR REPLACE INTO devices (device_id, device_info, last_sync, updated_at) VALUES (?, ?, ?, ?)"
-                    ).bind(
-                        device_id,
-                        JSON.stringify(device_info || {}),
-                        timestamp,
-                        timestamp
-                    ).run();
-                    console.log(`Device info saved to D1 for device ${device_id}`);
-                }
-            } catch (d1Error) {
-                console.warn('D1 device info save error (non-critical):', d1Error);
-                // Fallback to KV only if D1 fails and we're not at limit
-                if (kvWriteCount < MAX_KV_WRITES) {
-                    const deviceKey = `device:${device_id}`;
-                    const existingDevice = await env.SENTINEL_DATA.get(deviceKey);
-                    let shouldUpdateDevice = true;
-
-                    if (existingDevice) {
-                        try {
-                            const existing = JSON.parse(existingDevice);
-                            if (existing.device_info?.isp === device_info.isp &&
-                                existing.device_info?.network_type === device_info.network_type &&
-                                (timestamp - (existing.last_sync || 0)) < 7200000) {
-                                shouldUpdateDevice = false;
-                            }
-                        } catch {
-                            // If parse fails, update anyway
-                        }
-                    }
-
-                    if (shouldUpdateDevice) {
-                        kvWriteCount++;
-                        writePromises.push(
-                            env.SENTINEL_DATA.put(deviceKey, JSON.stringify({
-                                device_id,
-                                device_info,
-                                last_sync: timestamp,
-                            })).catch(err => {
-                                console.error(`Failed to write ${deviceKey} to KV:`, err);
-                            })
-                        );
-                    }
-                }
-            }
-
-            // Clear trigger flag after sync (mobile app has checked)
-            // Delete from D1 first, then KV
+            // Clear trigger flag from D1
             const triggerKey = 'trigger:check';
-            try {
-                await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(triggerKey).run();
-                console.log('Trigger check cleared from D1');
-            } catch (d1Error) {
-                console.warn('D1 delete error (non-critical):', d1Error);
-            }
-            // Also clear from KV (backward compatibility)
-            writePromises.push(
-                env.SENTINEL_DATA.delete(triggerKey).catch(err => {
-                    console.error(`Failed to delete ${triggerKey} from KV:`, err);
-                    // Don't throw - deletion failure is not critical
-                })
-            );
+            await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(triggerKey).run();
 
-            // Execute all KV writes in parallel (optional - failures are non-critical)
-            if (writePromises.length > 0) {
-                await Promise.allSettled(writePromises); // Use allSettled to not fail on KV errors
-                const successfulWrites = writePromises.length;
-                console.log(`Mobile sync: Attempted ${successfulWrites} KV writes (${results.length} results saved to D1)`);
-            } else {
-                console.log(`Mobile sync: No KV writes needed (all results unchanged, D1 already saved)`);
-            }
-
-        } catch (kvError: any) {
-            // KV errors are non-critical - D1 already saved successfully
-            console.warn('KV write error (non-critical, D1 save succeeded):', kvError);
-            // Continue - don't throw error since D1 save succeeded
+        } catch (d1Error: any) {
+            console.error('D1 save error:', d1Error);
+            // D1 is primary - if it fails, we have a real problem
         }
 
         // Alert checking is handled by Cron trigger only to avoid duplicate alerts
@@ -784,13 +624,7 @@ async function handleUpdateDomains(
         );
         await env.DB.batch(batch);
 
-        // Also save to KV for backward compatibility
-        try {
-            await env.SENTINEL_DATA.put('domains:list', JSON.stringify(uniqueHostnames));
-        } catch (kvError: any) {
-            // KV error is not critical - D1 is primary
-            console.warn('Failed to update KV (non-critical):', kvError);
-        }
+        // KV backup removed - D1 is the only storage now
 
         console.log(`Updated ${uniqueHostnames.length} domains in D1`);
 
@@ -1155,32 +989,8 @@ async function handleTriggerCheck(
 
             console.log('Trigger check saved to D1');
         } catch (d1Error) {
-            console.error('D1 save error, falling back to KV:', d1Error);
-            // Fallback to KV (for backward compatibility)
-            const existingTrigger = await env.SENTINEL_DATA.get(triggerKey);
-            if (existingTrigger) {
-                try {
-                    const existing = JSON.parse(existingTrigger);
-                    if (timestamp - existing.timestamp < 60000) {
-                        return jsonResponse({
-                            success: true,
-                            message: 'Check already triggered. Mobile app will check DNS soon.',
-                            timestamp: existing.timestamp,
-                            cached: true,
-                        }, 200, corsHeaders);
-                    }
-                } catch {
-                    // If parse fails, continue to update
-                }
-            }
-
-            await env.SENTINEL_DATA.put(triggerKey, JSON.stringify({
-                triggered: true,
-                timestamp,
-                requested_by: 'frontend',
-            }), {
-                expirationTtl: 300, // 5 minutes
-            });
+            console.error('D1 save error:', d1Error);
+            // D1 is the only storage now - no KV fallback
         }
 
         return jsonResponse({
@@ -1891,14 +1701,7 @@ async function handleSaveFrontendDomains(
         });
         await env.DB.batch(batch);
 
-        // Also save to KV for backward compatibility
-        try {
-            await env.SENTINEL_DATA.put('frontend:domains', JSON.stringify(domains));
-            await env.SENTINEL_DATA.put('domains:list', JSON.stringify(uniqueHostnames));
-        } catch (kvError: any) {
-            // KV error is not critical - D1 is primary
-            console.warn('Failed to update KV (non-critical):', kvError);
-        }
+        // KV backup removed - D1 is the only storage now
 
         console.log(`Frontend sync: Saved ${uniqueHostnames.length} domains to D1`);
 
@@ -2058,13 +1861,7 @@ async function handleSaveFrontendSettings(
         );
         await env.DB.batch(batch);
 
-        // Also save to KV for backward compatibility
-        try {
-            await env.SENTINEL_DATA.put('frontend:settings', JSON.stringify(settings));
-        } catch (kvError: any) {
-            // KV error is not critical - D1 is primary
-            console.warn('Failed to update KV (non-critical):', kvError);
-        }
+        // KV backup removed - D1 is the only storage now
 
         console.log('Settings saved to D1');
 
@@ -2231,7 +2028,8 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
             table += '-------------------|----|----|----\n';
 
             for (const domain of domains) {
-                let dName = domain.hostname.replace(/^www\./, '');
+                // Keep www. prefix - don't strip it
+                let dName = domain.hostname;
                 if (dName.length > 18) {
                     dName = dName.substring(0, 17) + '…';
                 }
