@@ -262,6 +262,70 @@ export default {
             }
         }
 
+        // View alert logs for debugging
+        if (url.pathname === '/api/debug/alert-logs' && request.method === 'GET') {
+            try {
+                const logs = await env.DB.prepare(
+                    "SELECT key, value, updated_at FROM settings WHERE key LIKE 'alert_log:%' ORDER BY updated_at DESC LIMIT 20"
+                ).all();
+                return jsonResponse({
+                    success: true,
+                    logs: logs.results?.map((r: any) => ({
+                        key: r.key,
+                        ...JSON.parse(r.value),
+                        updated_at: new Date(r.updated_at).toISOString()
+                    })) || []
+                }, 200, corsHeaders);
+            } catch (error: any) {
+                return jsonResponse({ success: false, error: error.message }, 500, corsHeaders);
+            }
+        }
+
+        // Cleanup orphan results (results for domains that are no longer monitored)
+        if (url.pathname === '/api/cleanup-orphan-results' && request.method === 'POST') {
+            try {
+                // Get all monitored domains
+                const domainsResult = await env.DB.prepare(
+                    "SELECT hostname FROM domains WHERE is_monitoring = 1 OR is_monitoring IS NULL"
+                ).all();
+                const monitoredDomains = new Set(domainsResult.results.map((r: any) => r.hostname.toLowerCase()));
+
+                // Get all unique hostnames in results
+                const resultsHostnames = await env.DB.prepare(
+                    "SELECT DISTINCT hostname FROM results"
+                ).all();
+
+                // Find orphan hostnames (in results but not in monitored domains)
+                const orphanHostnames = resultsHostnames.results
+                    .map((r: any) => r.hostname)
+                    .filter((hostname: string) => !monitoredDomains.has(hostname.toLowerCase()));
+
+                if (orphanHostnames.length > 0) {
+                    // Delete orphan results
+                    const deleteStmt = env.DB.prepare("DELETE FROM results WHERE hostname = ?");
+                    const deleteBatch = orphanHostnames.map((hostname: string) => deleteStmt.bind(hostname));
+                    await env.DB.batch(deleteBatch);
+
+                    console.log(`Cleanup: Deleted results for ${orphanHostnames.length} orphan domains:`, orphanHostnames);
+
+                    return jsonResponse({
+                        success: true,
+                        message: `Deleted results for ${orphanHostnames.length} orphan domains`,
+                        deletedDomains: orphanHostnames,
+                        remainingMonitoredDomains: Array.from(monitoredDomains)
+                    }, 200, corsHeaders);
+                }
+
+                return jsonResponse({
+                    success: true,
+                    message: 'No orphan results found',
+                    monitoredDomains: Array.from(monitoredDomains)
+                }, 200, corsHeaders);
+            } catch (error: any) {
+                return jsonResponse({ success: false, error: error.message }, 500, corsHeaders);
+            }
+        }
+
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
@@ -553,12 +617,14 @@ async function getDomainsFromD1(env: Env): Promise<string[]> {
 
 // Helper: Save domain to D1
 async function saveDomainToD1(env: Env, hostname: string, url?: string): Promise<void> {
-    const id = hostname.toLowerCase().replace(/^www\./, '');
+    // Keep www. prefix - don't normalize, treat www.domain.com and domain.com as separate
+    const normalizedHostname = hostname.toLowerCase();
+    const id = normalizedHostname;
     await env.DB.prepare(
         "INSERT OR REPLACE INTO domains (id, hostname, url, updated_at) VALUES (?, ?, ?, ?)"
     ).bind(
         id,
-        hostname.toLowerCase().replace(/^www\./, ''),
+        normalizedHostname,
         url || hostname,
         Date.now()
     ).run();
@@ -592,10 +658,10 @@ async function handleGetDomains(
                 try {
                     const parsed = JSON.parse(storedDomains);
                     if (Array.isArray(parsed)) {
-                        // Normalize hostnames (remove www, lowercase)
+                        // Keep www. prefix - treat www.domain.com and domain.com as separate
                         domains = parsed.map((d: any) => {
                             const str = typeof d === 'string' ? d : (d.hostname || d.url || String(d));
-                            return str.replace(/^www\./i, '').toLowerCase();
+                            return str.toLowerCase();
                         });
                         // Remove duplicates and sort
                         domains = [...new Set(domains)].sort();
@@ -657,7 +723,7 @@ async function handleUpdateDomains(
             );
         }
 
-        // Extract and normalize hostnames
+        // Extract hostnames - keep www. prefix to track www and non-www separately
         const hostnames = domains.map(domain => {
             let hostname = domain;
             if (domain.startsWith('http://') || domain.startsWith('https://')) {
@@ -668,7 +734,7 @@ async function handleUpdateDomains(
                     hostname = domain;
                 }
             }
-            return hostname.replace(/^www\./i, '').toLowerCase();
+            return hostname.toLowerCase(); // Keep www. prefix
         });
         const uniqueHostnames = [...new Set(hostnames)].sort();
 
@@ -697,9 +763,17 @@ async function handleUpdateDomains(
 
         if (domainsToDelete.length > 0) {
             console.log(`Deleting ${domainsToDelete.length} old domains:`, domainsToDelete);
+
+            // Delete from domains table
             const deleteStmt = env.DB.prepare("DELETE FROM domains WHERE hostname = ?");
             const deleteBatch = domainsToDelete.map(hostname => deleteStmt.bind(hostname));
             await env.DB.batch(deleteBatch);
+
+            // Also delete related results from results table
+            const deleteResultsStmt = env.DB.prepare("DELETE FROM results WHERE hostname = ?");
+            const deleteResultsBatch = domainsToDelete.map(hostname => deleteResultsStmt.bind(hostname));
+            await env.DB.batch(deleteResultsBatch);
+            console.log(`Deleted results for ${domainsToDelete.length} removed domains`);
         }
 
         // Then, insert or replace domains in the new list
@@ -1731,28 +1805,29 @@ async function handleSaveFrontendDomains(
         }
 
         // Extract hostnames from Domain objects if needed
+        // Keep www. prefix - treat www.domain.com and domain.com as separate
         const hostnames = domains.map(domain => {
             if (typeof domain === 'string') {
                 if (domain.startsWith('http://') || domain.startsWith('https://')) {
                     try {
                         const url = new URL(domain);
-                        return url.hostname.replace(/^www\./, '').toLowerCase();
+                        return url.hostname.toLowerCase(); // Keep www. prefix
                     } catch {
-                        return domain.replace(/^www\./, '').toLowerCase();
+                        return domain.toLowerCase();
                     }
                 }
-                return domain.replace(/^www\./, '').toLowerCase();
+                return domain.toLowerCase();
             } else if (domain.hostname) {
-                return domain.hostname.replace(/^www\./, '').toLowerCase();
+                return domain.hostname.toLowerCase();
             } else if (domain.url) {
                 try {
                     const url = new URL(domain.url.startsWith('http') ? domain.url : `https://${domain.url}`);
-                    return url.hostname.replace(/^www\./, '').toLowerCase();
+                    return url.hostname.toLowerCase();
                 } catch {
-                    return domain.url.replace(/^www\./, '').toLowerCase();
+                    return domain.url.toLowerCase();
                 }
             }
-            return String(domain).replace(/^www\./, '').toLowerCase();
+            return String(domain).toLowerCase();
         });
 
         // Normalize: remove duplicates and sort
@@ -1785,23 +1860,20 @@ async function handleSaveFrontendDomains(
         const batch = uniqueHostnames.map(hostname => {
             const domainObj = domains.find((d: any) => {
                 if (typeof d === 'string') {
-                    const normalized = d.replace(/^www\./i, '').toLowerCase();
-                    return normalized === hostname;
+                    // Keep www. prefix for matching
+                    return d.toLowerCase() === hostname;
                 }
                 // Try to match by hostname first
                 if (d.hostname) {
-                    const normalized = d.hostname.replace(/^www\./i, '').toLowerCase();
-                    if (normalized === hostname) return true;
+                    if (d.hostname.toLowerCase() === hostname) return true;
                 }
                 // Try to match by url
                 if (d.url) {
                     try {
                         const url = new URL(d.url.startsWith('http') ? d.url : `https://${d.url}`);
-                        const normalized = url.hostname.replace(/^www\./i, '').toLowerCase();
-                        if (normalized === hostname) return true;
+                        if (url.hostname.toLowerCase() === hostname) return true;
                     } catch {
-                        const normalized = d.url.replace(/^www\./i, '').toLowerCase();
-                        if (normalized === hostname) return true;
+                        if (d.url.toLowerCase() === hostname) return true;
                     }
                 }
                 return false;
@@ -2016,8 +2088,28 @@ async function handleSaveFrontendSettings(
 
 // Check and send alerts for blocked domains
 async function checkAndSendAlerts(env: Env): Promise<void> {
+    const startTime = Date.now();
+    let alertStatus = 'started';
+    let alertDetails = '';
+
+    // Helper to log alert attempt to D1
+    const logAlert = async (status: string, details: string) => {
+        try {
+            await env.DB.prepare(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+            ).bind(
+                `alert_log:${startTime}`,
+                JSON.stringify({ status, details, timestamp: Date.now() }),
+                Date.now()
+            ).run();
+        } catch (e) {
+            console.error('Failed to log alert:', e);
+        }
+    };
+
     try {
         console.log('🔔 [Alert] Checking for blocked domains and sending alerts...');
+        await logAlert('started', 'Beginning alert check');
 
         // Get settings from D1
         const settingsResult = await env.DB.prepare(
@@ -2132,26 +2224,36 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
         // Helper function to build message for a list of domains
         const buildMessage = (domains: DomainStatus[]): string => {
             let lines: string[] = [];
-            lines.push('🔔 <b>สถานะเว็บไซต์</b>\n');
+            lines.push('🔔 <b>สถานะเว็บไซต์</b>');
+
+            let table = '<pre>';
+            table += 'Domain             | A  | T  | D \n';
+            table += '-------------------|----|----|----\n';
 
             for (const domain of domains) {
-                lines.push(`<b>${domain.hostname}</b>`);
+                let dName = domain.hostname.replace(/^www\./, '');
+                if (dName.length > 18) {
+                    dName = dName.substring(0, 17) + '…';
+                }
+                dName = dName.padEnd(19, ' ');
 
-                if (domain.aisStatus) {
-                    const emoji = domain.aisStatus === 'BLOCKED' ? '🚫' : '✅';
-                    lines.push(`${emoji} AIS`);
-                }
-                if (domain.trueStatus) {
-                    const emoji = domain.trueStatus === 'BLOCKED' ? '🚫' : '✅';
-                    lines.push(`${emoji} True`);
-                }
-                if (domain.dtacStatus) {
-                    const emoji = domain.dtacStatus === 'BLOCKED' ? '🚫' : '✅';
-                    lines.push(`${emoji} DTAC`);
-                }
+                const getStatusEmoji = (status: string | null) => {
+                    if (!status) return '➖';
+                    if (status === 'BLOCKED') return '🚫';
+                    if (status === 'ACTIVE') return '✅';
+                    return '❓';
+                };
 
-                lines.push(''); // Empty line between domains
+                const a = getStatusEmoji(domain.aisStatus);
+                const t = getStatusEmoji(domain.trueStatus);
+                const d = getStatusEmoji(domain.dtacStatus);
+
+                table += `${dName}| ${a} | ${t} | ${d}\n`;
             }
+            table += '</pre>';
+
+            lines.push(table);
+            lines.push('<i>A = AIS, T = True, D = DTAC</i>');
 
             return lines.join('\n');
         };
@@ -2192,29 +2294,39 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
         }
 
         // Send to each custom chat ID (only their domains)
+        let customSentCount = 0;
+        let customFailCount = 0;
         for (const [chatId, domains] of domainsByChatId) {
             const message = buildMessage(domains);
             const sent = await sendTelegram(chatId, message);
             if (sent) {
                 console.log(`🔔 [Alert] Sent to custom chat ${chatId}: ${domains.map(d => d.hostname).join(', ')}`);
+                customSentCount++;
             } else {
                 console.error(`🔔 [Alert] Failed to send to custom chat ${chatId}`);
+                customFailCount++;
             }
         }
 
         // Send to default chat ID (ALL domains)
+        let defaultSent = false;
         if (defaultTelegramChatId) {
             const allDomainsMessage = buildMessage(allDomainStatuses);
             const sent = await sendTelegram(defaultTelegramChatId, allDomainsMessage);
             if (sent) {
                 console.log(`🔔 [Alert] Sent ALL domains to default chat ${defaultTelegramChatId}`);
+                defaultSent = true;
             } else {
                 console.error(`🔔 [Alert] Failed to send to default chat ${defaultTelegramChatId}`);
             }
         }
 
-        console.log('🔔 [Alert] Finished checking and sending alerts');
-    } catch (error) {
+        // Log final result
+        const finalDetails = `Sent: default=${defaultSent}, custom=${customSentCount}, failed=${customFailCount}, domains=${allDomainStatuses.length}`;
+        await logAlert('completed', finalDetails);
+        console.log(`🔔 [Alert] Finished - ${finalDetails}`);
+    } catch (error: any) {
+        await logAlert('error', error.message || String(error));
         console.error('🔔 [Alert] Error in checkAndSendAlerts:', error);
     }
 }

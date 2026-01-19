@@ -304,9 +304,9 @@ export default function Home() {
                                 if (response.success && response.results.length > 0) {
                                     addLog(`Loaded ${response.results.length} latest results from D1`, 'success');
 
-                                    // Normalize hostname for matching
+                                    // Keep www. prefix - treat www.domain.com and domain.com as separate
                                     const normalizeHostname = (hostname: string): string => {
-                                        return hostname.toLowerCase().replace(/^www\./, '');
+                                        return hostname.toLowerCase();
                                     };
 
                                     // Group results by normalized hostname
@@ -454,9 +454,9 @@ export default function Home() {
             if (response.success && response.results.length > 0) {
                 addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
 
-                // Normalize hostname for matching (remove www, lowercase)
+                // Keep www. prefix - treat www.domain.com and domain.com as separate
                 const normalizeHostname = (hostname: string): string => {
-                    return hostname.toLowerCase().replace(/^www\./, '');
+                    return hostname.toLowerCase();
                 };
 
                 // Group results by normalized hostname
