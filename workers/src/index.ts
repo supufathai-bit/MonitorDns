@@ -371,15 +371,9 @@ async function handleMobileSync(
                     ispName = device_info?.isp || 'Unknown';
                 }
 
-                // Determine status based on IP address:
-                let finalStatus = result.status;
-                if (result.ip && result.ip.trim() !== '') {
-                    // Got IP address = DNS resolution successful = ACTIVE
-                    finalStatus = 'ACTIVE';
-                } else {
-                    // No IP address = DNS resolution failed = BLOCKED
-                    finalStatus = 'BLOCKED';
-                }
+                // Use the status from mobile app directly
+                // Thai ISPs return block page IP for blocked domains, so we trust the app's detection
+                const finalStatus = result.status || 'ACTIVE';
 
                 const resultId = `${result.hostname}:${ispName}:${device_id}`;
                 return d1Stmt.bind(
