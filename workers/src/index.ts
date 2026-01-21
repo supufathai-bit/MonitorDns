@@ -44,8 +44,6 @@ export default {
         console.log('⏰ [Cron] Scheduled event triggered');
 
         try {
-            const now = Date.now(); // Get current time once at the start
-
             // Get next scan time from D1
             const key = 'next_scan_time';
             const result = await env.DB.prepare(
@@ -53,34 +51,25 @@ export default {
             ).bind(key).first();
 
             if (!result) {
-                console.log('⏰ [Cron] No next scan time found, creating new one and triggering scan...');
-                // Create new next scan time and trigger immediately
-                const defaultInterval = 360; // 6 hours in minutes
-                const nextScanData = {
-                    nextScanTime: now, // Set to now to trigger immediately
-                    checkInterval: defaultInterval,
-                    timestamp: now
-                };
-                await env.DB.prepare(
-                    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
-                ).bind(key, JSON.stringify(nextScanData), now).run();
-                // Continue with the scan trigger below
+                console.log('⏰ [Cron] No next scan time found, skipping');
+                return;
             }
 
-            const data = result ? JSON.parse(result.value as string) : { nextScanTime: now, checkInterval: 360 };
-            const nextScanTime = data.nextScanTime || now;
+            const data = JSON.parse(result.value as string);
+            const nextScanTime = data.nextScanTime;
             const checkInterval = data.checkInterval || 360;
 
-            if (!data.nextScanTime) {
-                console.log('⏰ [Cron] No next scan time set, triggering scan now...');
-                // Fall through to trigger scan
+            if (!nextScanTime) {
+                console.log('⏰ [Cron] No next scan time set, skipping');
+                return;
             }
 
+            const now = Date.now();
             const timeUntilScan = nextScanTime - now;
 
-            // Check if it's time to scan (past the scheduled time)
-            if (timeUntilScan <= 0) {
-                console.log(`⏰ [Cron] Time to scan! nextScanTime: ${new Date(nextScanTime).toISOString()}, now: ${new Date(now).toISOString()}, overdue by ${Math.abs(Math.round(timeUntilScan / 1000 / 60))} minutes`);
+            // Check if it's time to scan (within 5 minutes window)
+            if (timeUntilScan <= 0 && timeUntilScan >= -300000) { // -5 minutes tolerance
+                console.log(`⏰ [Cron] Time to scan! nextScanTime: ${new Date(nextScanTime).toISOString()}, now: ${new Date(now).toISOString()}`);
 
                 // Trigger mobile app to check DNS
                 const triggerKey = 'trigger:check';
@@ -104,7 +93,12 @@ export default {
                     console.error('⏰ [Cron] Error saving trigger to D1:', error);
                 }
 
-                // KV backup removed - D1 is the only storage now
+                // Also save to KV for backward compatibility
+                try {
+                    await env.SENTINEL_DATA.put(triggerKey, JSON.stringify(triggerData));
+                } catch (error) {
+                    console.warn('⏰ [Cron] Failed to save trigger to KV (non-critical):', error);
+                }
 
                 // Update next scan time
                 const intervalMs = checkInterval * 60 * 1000;
@@ -124,18 +118,15 @@ export default {
                 ).run();
 
                 console.log(`⏰ [Cron] Next scan time updated: ${new Date(newNextScanTime).toISOString()}`);
-
-                // Check and send alerts for blocked domains (only when scan time is reached)
-                try {
-                    await checkAndSendAlerts(env);
-                } catch (alertError) {
-                    console.error('⏰ [Cron] Error in alert check:', alertError);
-                }
             } else {
                 console.log(`⏰ [Cron] Not time yet. Time until scan: ${Math.round(timeUntilScan / 1000 / 60)} minutes`);
             }
 
-            // Alerts are sent only when scan time is reached (inside the if block above)
+            // Always check and send alerts based on latest results in D1
+            // This ensures alerts are sent even if mobile app sync happened earlier
+            checkAndSendAlerts(env).catch(error => {
+                console.error('⏰ [Cron] Error in background alert check:', error);
+            });
         } catch (error) {
             console.error('⏰ [Cron] Error in scheduled handler:', error);
         }
@@ -242,85 +233,6 @@ export default {
             return handleLogout(request, env, corsHeaders);
         }
 
-        // Debug endpoints
-        if (url.pathname === '/api/debug/status' && request.method === 'GET') {
-            return handleDebugStatus(request, env, corsHeaders);
-        }
-
-        // Manual alert trigger (called by frontend after scan completes)
-        if (url.pathname === '/api/trigger-alert' && request.method === 'POST') {
-            try {
-                await checkAndSendAlerts(env);
-                return jsonResponse({ success: true, message: 'Alert check triggered' }, 200, corsHeaders);
-            } catch (error: any) {
-                return jsonResponse({ success: false, error: error.message }, 500, corsHeaders);
-            }
-        }
-
-        // View alert logs for debugging
-        if (url.pathname === '/api/debug/alert-logs' && request.method === 'GET') {
-            try {
-                const logs = await env.DB.prepare(
-                    "SELECT key, value, updated_at FROM settings WHERE key LIKE 'alert_log:%' ORDER BY updated_at DESC LIMIT 20"
-                ).all();
-                return jsonResponse({
-                    success: true,
-                    logs: logs.results?.map((r: any) => ({
-                        key: r.key,
-                        ...JSON.parse(r.value),
-                        updated_at: new Date(r.updated_at).toISOString()
-                    })) || []
-                }, 200, corsHeaders);
-            } catch (error: any) {
-                return jsonResponse({ success: false, error: error.message }, 500, corsHeaders);
-            }
-        }
-
-        // Cleanup orphan results (results for domains that are no longer monitored)
-        if (url.pathname === '/api/cleanup-orphan-results' && request.method === 'POST') {
-            try {
-                // Get all monitored domains
-                const domainsResult = await env.DB.prepare(
-                    "SELECT hostname FROM domains WHERE is_monitoring = 1 OR is_monitoring IS NULL"
-                ).all();
-                const monitoredDomains = new Set(domainsResult.results.map((r: any) => r.hostname.toLowerCase()));
-
-                // Get all unique hostnames in results
-                const resultsHostnames = await env.DB.prepare(
-                    "SELECT DISTINCT hostname FROM results"
-                ).all();
-
-                // Find orphan hostnames (in results but not in monitored domains)
-                const orphanHostnames = resultsHostnames.results
-                    .map((r: any) => r.hostname)
-                    .filter((hostname: string) => !monitoredDomains.has(hostname.toLowerCase()));
-
-                if (orphanHostnames.length > 0) {
-                    // Delete orphan results
-                    const deleteStmt = env.DB.prepare("DELETE FROM results WHERE hostname = ?");
-                    const deleteBatch = orphanHostnames.map((hostname: string) => deleteStmt.bind(hostname));
-                    await env.DB.batch(deleteBatch);
-
-                    console.log(`Cleanup: Deleted results for ${orphanHostnames.length} orphan domains:`, orphanHostnames);
-
-                    return jsonResponse({
-                        success: true,
-                        message: `Deleted results for ${orphanHostnames.length} orphan domains`,
-                        deletedDomains: orphanHostnames,
-                        remainingMonitoredDomains: Array.from(monitoredDomains)
-                    }, 200, corsHeaders);
-                }
-
-                return jsonResponse({
-                    success: true,
-                    message: 'No orphan results found',
-                    monitoredDomains: Array.from(monitoredDomains)
-                }, 200, corsHeaders);
-            } catch (error: any) {
-                return jsonResponse({ success: false, error: error.message }, 500, corsHeaders);
-            }
-        }
-
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
@@ -355,67 +267,223 @@ async function handleMobileSync(
             }
         }
 
-        // Store results in D1 only (no more KV - D1 has no write limits!)
+        // Store results in D1 (primary) and KV (backup)
         const timestamp = Date.now();
+        let kvWriteCount = 0; // Track KV writes (declared outside try block for error handling)
+        const MAX_KV_WRITES = 50; // Limit writes per sync to avoid hitting daily limit
 
         try {
-            // Save to D1 (primary and only storage - no write limits!)
-            const d1Stmt = env.DB.prepare(
-                "INSERT OR REPLACE INTO results (id, hostname, isp_name, status, ip, latency, device_id, device_info, timestamp, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            );
+            // Save to D1 first (primary storage - no write limits!)
+            try {
+                const d1Stmt = env.DB.prepare(
+                    "INSERT OR REPLACE INTO results (id, hostname, isp_name, status, ip, latency, device_id, device_info, timestamp, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                );
 
-            const d1Batch = results.map(result => {
+                const d1Batch = results.map(result => {
+                    // Use device_info.isp if isp_name is "Unknown" or empty
+                    let ispName = result.isp_name;
+                    if (!ispName || ispName === 'Unknown' || ispName === 'unknown') {
+                        ispName = device_info?.isp || 'Unknown';
+                    }
+
+                    // Determine status based on IP address:
+                    // - If IP exists = ACTIVE (DNS resolution successful)
+                    // - If no IP = BLOCKED (DNS resolution failed)
+                    // This ensures consistency: got IP = ACTIVE, no IP = BLOCKED
+                    let finalStatus = result.status;
+                    if (result.ip && result.ip.trim() !== '') {
+                        // Got IP address = DNS resolution successful = ACTIVE
+                        finalStatus = 'ACTIVE';
+                    } else {
+                        // No IP address = DNS resolution failed = BLOCKED
+                        finalStatus = 'BLOCKED';
+                    }
+
+                    const resultId = `${result.hostname}:${ispName}:${device_id}`;
+                    return d1Stmt.bind(
+                        resultId,
+                        result.hostname,
+                        ispName, // Use corrected ISP name
+                        finalStatus,
+                        result.ip || null,
+                        result.latency || null,
+                        device_id,
+                        JSON.stringify(device_info || {}),
+                        timestamp,
+                        'mobile-app'
+                    );
+                });
+
+                await env.DB.batch(d1Batch);
+                console.log(`Mobile sync: Saved ${results.length} results to D1`);
+            } catch (d1Error) {
+                console.error('D1 save error (non-critical, continuing with KV):', d1Error);
+                // Continue with KV even if D1 fails
+            }
+
+            // Store latest result per domain+ISP in KV (optional backup for faster reads)
+            // D1 is primary, KV is just for backward compatibility and performance
+            // If KV limit exceeded, it's OK - D1 already saved successfully
+            const writePromises: Promise<void>[] = [];
+
+            for (const result of results) {
+                // Stop if we're approaching the limit (optional writes)
+                if (kvWriteCount >= MAX_KV_WRITES) {
+                    console.warn(`Reached KV write limit (${MAX_KV_WRITES}) for this sync. Skipping remaining KV writes (D1 already saved).`);
+                    break;
+                }
+
                 // Use device_info.isp if isp_name is "Unknown" or empty
                 let ispName = result.isp_name;
                 if (!ispName || ispName === 'Unknown' || ispName === 'unknown') {
                     ispName = device_info?.isp || 'Unknown';
                 }
 
-                // Use the status from mobile app directly
-                // Thai ISPs return block page IP for blocked domains, so we trust the app's detection
-                const finalStatus = result.status || 'ACTIVE';
+                const latestKey = `latest:${result.hostname}:${ispName}`;
 
-                const resultId = `${result.hostname}:${ispName}:${device_id}`;
-                return d1Stmt.bind(
-                    resultId,
-                    result.hostname,
-                    ispName,
-                    finalStatus,
-                    result.ip || null,
-                    result.latency || null,
-                    device_id,
-                    JSON.stringify(device_info || {}),
-                    timestamp,
-                    'mobile-app'
-                );
-            });
+                // Check if we need to update (only if different or missing)
+                const existingData = await env.SENTINEL_DATA.get(latestKey);
+                let shouldUpdate = true;
 
-            if (d1Batch.length > 0) {
-                await env.DB.batch(d1Batch);
-                console.log(`Mobile sync: Saved ${d1Batch.length} updates to D1`);
+                if (existingData) {
+                    try {
+                        const existing = JSON.parse(existingData);
+                        // Only update if status changed or timestamp is much older (10 minutes)
+                        if (existing.status === result.status &&
+                            existing.ip === result.ip &&
+                            (timestamp - existing.timestamp) < 600000) {
+                            shouldUpdate = false;
+                        }
+                    } catch {
+                        // If parse fails, update anyway
+                    }
+                }
+
+                if (shouldUpdate) {
+                    kvWriteCount++;
+                    writePromises.push(
+                        env.SENTINEL_DATA.put(latestKey, JSON.stringify({
+                            ...result,
+                            isp_name: ispName, // Use corrected ISP name
+                            device_id,
+                            device_info,
+                            timestamp,
+                            source: 'mobile-app',
+                        }), {
+                            expirationTtl: 86400 * 7, // 7 days
+                        }).catch(err => {
+                            // KV writes are optional - don't throw error, just log
+                            console.warn(`Failed to write ${latestKey} to KV (non-critical, D1 already saved):`, err.message);
+                        })
+                    );
+                }
             }
 
-            // Store device info in D1
-            await env.DB.prepare(
-                "INSERT OR REPLACE INTO devices (device_id, device_info, last_sync, updated_at) VALUES (?, ?, ?, ?)"
-            ).bind(
-                device_id,
-                JSON.stringify(device_info || {}),
-                timestamp,
-                timestamp
-            ).run();
+            // Store device info in D1 (primary storage - no write limits!)
+            try {
+                const existingDevice = await env.DB.prepare(
+                    "SELECT device_info, last_sync FROM devices WHERE device_id = ?"
+                ).bind(device_id).first();
 
-            // Clear trigger flag from D1
+                let shouldUpdateDevice = true;
+
+                if (existingDevice) {
+                    try {
+                        const existing = JSON.parse(existingDevice.device_info as string);
+                        // Only update if device info changed or last sync was more than 2 hours ago
+                        if (existing.isp === device_info.isp &&
+                            existing.network_type === device_info.network_type &&
+                            (timestamp - (existingDevice.last_sync as number)) < 7200000) {
+                            shouldUpdateDevice = false;
+                        }
+                    } catch {
+                        // If parse fails, update anyway
+                    }
+                }
+
+                if (shouldUpdateDevice) {
+                    await env.DB.prepare(
+                        "INSERT OR REPLACE INTO devices (device_id, device_info, last_sync, updated_at) VALUES (?, ?, ?, ?)"
+                    ).bind(
+                        device_id,
+                        JSON.stringify(device_info || {}),
+                        timestamp,
+                        timestamp
+                    ).run();
+                    console.log(`Device info saved to D1 for device ${device_id}`);
+                }
+            } catch (d1Error) {
+                console.warn('D1 device info save error (non-critical):', d1Error);
+                // Fallback to KV only if D1 fails and we're not at limit
+                if (kvWriteCount < MAX_KV_WRITES) {
+                    const deviceKey = `device:${device_id}`;
+                    const existingDevice = await env.SENTINEL_DATA.get(deviceKey);
+                    let shouldUpdateDevice = true;
+
+                    if (existingDevice) {
+                        try {
+                            const existing = JSON.parse(existingDevice);
+                            if (existing.device_info?.isp === device_info.isp &&
+                                existing.device_info?.network_type === device_info.network_type &&
+                                (timestamp - (existing.last_sync || 0)) < 7200000) {
+                                shouldUpdateDevice = false;
+                            }
+                        } catch {
+                            // If parse fails, update anyway
+                        }
+                    }
+
+                    if (shouldUpdateDevice) {
+                        kvWriteCount++;
+                        writePromises.push(
+                            env.SENTINEL_DATA.put(deviceKey, JSON.stringify({
+                                device_id,
+                                device_info,
+                                last_sync: timestamp,
+                            })).catch(err => {
+                                console.error(`Failed to write ${deviceKey} to KV:`, err);
+                            })
+                        );
+                    }
+                }
+            }
+
+            // Clear trigger flag after sync (mobile app has checked)
+            // Delete from D1 first, then KV
             const triggerKey = 'trigger:check';
-            await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(triggerKey).run();
+            try {
+                await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(triggerKey).run();
+                console.log('Trigger check cleared from D1');
+            } catch (d1Error) {
+                console.warn('D1 delete error (non-critical):', d1Error);
+            }
+            // Also clear from KV (backward compatibility)
+            writePromises.push(
+                env.SENTINEL_DATA.delete(triggerKey).catch(err => {
+                    console.error(`Failed to delete ${triggerKey} from KV:`, err);
+                    // Don't throw - deletion failure is not critical
+                })
+            );
 
-        } catch (d1Error: any) {
-            console.error('D1 save error:', d1Error);
-            // D1 is primary - if it fails, we have a real problem
+            // Execute all KV writes in parallel (optional - failures are non-critical)
+            if (writePromises.length > 0) {
+                await Promise.allSettled(writePromises); // Use allSettled to not fail on KV errors
+                const successfulWrites = writePromises.length;
+                console.log(`Mobile sync: Attempted ${successfulWrites} KV writes (${results.length} results saved to D1)`);
+            } else {
+                console.log(`Mobile sync: No KV writes needed (all results unchanged, D1 already saved)`);
+            }
+
+        } catch (kvError: any) {
+            // KV errors are non-critical - D1 already saved successfully
+            console.warn('KV write error (non-critical, D1 save succeeded):', kvError);
+            // Continue - don't throw error since D1 save succeeded
         }
 
-        // Alert checking is handled by Cron trigger only to avoid duplicate alerts
-        // (Cron runs every 1 minute and only triggers when next_scan_time is reached)
+        // Check and send alerts for blocked domains (async, don't wait)
+        checkAndSendAlerts(env).catch(error => {
+            console.error('🔔 [Alert] Error in background alert check:', error);
+        });
 
         return jsonResponse({
             success: true,
@@ -451,14 +519,12 @@ async function getDomainsFromD1(env: Env): Promise<string[]> {
 
 // Helper: Save domain to D1
 async function saveDomainToD1(env: Env, hostname: string, url?: string): Promise<void> {
-    // Keep www. prefix - don't normalize, treat www.domain.com and domain.com as separate
-    const normalizedHostname = hostname.toLowerCase();
-    const id = normalizedHostname;
+    const id = hostname.toLowerCase().replace(/^www\./, '');
     await env.DB.prepare(
         "INSERT OR REPLACE INTO domains (id, hostname, url, updated_at) VALUES (?, ?, ?, ?)"
     ).bind(
         id,
-        normalizedHostname,
+        hostname.toLowerCase().replace(/^www\./, ''),
         url || hostname,
         Date.now()
     ).run();
@@ -492,10 +558,10 @@ async function handleGetDomains(
                 try {
                     const parsed = JSON.parse(storedDomains);
                     if (Array.isArray(parsed)) {
-                        // Keep www. prefix - treat www.domain.com and domain.com as separate
+                        // Normalize hostnames (remove www, lowercase)
                         domains = parsed.map((d: any) => {
                             const str = typeof d === 'string' ? d : (d.hostname || d.url || String(d));
-                            return str.toLowerCase();
+                            return str.replace(/^www\./i, '').toLowerCase();
                         });
                         // Remove duplicates and sort
                         domains = [...new Set(domains)].sort();
@@ -557,7 +623,7 @@ async function handleUpdateDomains(
             );
         }
 
-        // Extract hostnames - keep www. prefix to track www and non-www separately
+        // Extract and normalize hostnames
         const hostnames = domains.map(domain => {
             let hostname = domain;
             if (domain.startsWith('http://') || domain.startsWith('https://')) {
@@ -568,7 +634,7 @@ async function handleUpdateDomains(
                     hostname = domain;
                 }
             }
-            return hostname.toLowerCase(); // Keep www. prefix
+            return hostname.replace(/^www\./i, '').toLowerCase();
         });
         const uniqueHostnames = [...new Set(hostnames)].sort();
 
@@ -589,25 +655,46 @@ async function handleUpdateDomains(
 
         // Save to D1 (primary storage)
         // First, delete domains that are not in the new list
-        const domainsToDelete = existingDomains.filter(existing =>
-            !uniqueHostnames.some(newHostname =>
-                newHostname.toLowerCase() === existing.toLowerCase()
-            )
-        );
+        // Normalize both lists for comparison (lowercase, no www prefix)
+        const normalizeHostname = (h: string) => h.toLowerCase().replace(/^www\./, '');
+        const normalizedNew = uniqueHostnames.map(normalizeHostname);
+        
+        const domainsToDelete = existingDomains.filter(existing => {
+            const normalizedExisting = normalizeHostname(existing);
+            return !normalizedNew.includes(normalizedExisting);
+        });
 
         if (domainsToDelete.length > 0) {
             console.log(`Deleting ${domainsToDelete.length} old domains:`, domainsToDelete);
-
-            // Delete from domains table
-            const deleteStmt = env.DB.prepare("DELETE FROM domains WHERE hostname = ?");
-            const deleteBatch = domainsToDelete.map(hostname => deleteStmt.bind(hostname));
-            await env.DB.batch(deleteBatch);
-
-            // Also delete related results from results table
-            const deleteResultsStmt = env.DB.prepare("DELETE FROM results WHERE hostname = ?");
-            const deleteResultsBatch = domainsToDelete.map(hostname => deleteResultsStmt.bind(hostname));
-            await env.DB.batch(deleteResultsBatch);
-            console.log(`Deleted results for ${domainsToDelete.length} removed domains`);
+            
+            // Delete domains and their related results
+            // For each hostname to delete, we need to find all variations (with/without www, case variations)
+            // First, get all actual hostnames from D1 that match the normalized versions
+            const deleteDomainBatch: any[] = [];
+            const deleteResultsBatch: any[] = [];
+            
+            for (const hostnameToDelete of domainsToDelete) {
+                const normalized = normalizeHostname(hostnameToDelete);
+                
+                // Find all hostnames in D1 that normalize to the same value
+                // Get all domains and filter in JavaScript (more reliable than SQL REPLACE)
+                const allDomains = await env.DB.prepare("SELECT hostname FROM domains").all();
+                const matchingHostnames = (allDomains.results as any[])
+                    .map(row => row.hostname)
+                    .filter(h => normalizeHostname(h) === normalized);
+                
+                // Delete each matching domain and its results
+                for (const actualHostname of matchingHostnames) {
+                    deleteDomainBatch.push(env.DB.prepare("DELETE FROM domains WHERE hostname = ?").bind(actualHostname));
+                    deleteResultsBatch.push(env.DB.prepare("DELETE FROM results WHERE hostname = ?").bind(actualHostname));
+                }
+            }
+            
+            if (deleteDomainBatch.length > 0) {
+                await env.DB.batch(deleteDomainBatch);
+                await env.DB.batch(deleteResultsBatch);
+                console.log(`Deleted ${deleteDomainBatch.length} domain records and their results from D1`);
+            }
         }
 
         // Then, insert or replace domains in the new list
@@ -618,7 +705,13 @@ async function handleUpdateDomains(
         );
         await env.DB.batch(batch);
 
-        // KV backup removed - D1 is the only storage now
+        // Also save to KV for backward compatibility
+        try {
+            await env.SENTINEL_DATA.put('domains:list', JSON.stringify(uniqueHostnames));
+        } catch (kvError: any) {
+            // KV error is not critical - D1 is primary
+            console.warn('Failed to update KV (non-critical):', kvError);
+        }
 
         console.log(`Updated ${uniqueHostnames.length} domains in D1`);
 
@@ -983,8 +1076,32 @@ async function handleTriggerCheck(
 
             console.log('Trigger check saved to D1');
         } catch (d1Error) {
-            console.error('D1 save error:', d1Error);
-            // D1 is the only storage now - no KV fallback
+            console.error('D1 save error, falling back to KV:', d1Error);
+            // Fallback to KV (for backward compatibility)
+            const existingTrigger = await env.SENTINEL_DATA.get(triggerKey);
+            if (existingTrigger) {
+                try {
+                    const existing = JSON.parse(existingTrigger);
+                    if (timestamp - existing.timestamp < 60000) {
+                        return jsonResponse({
+                            success: true,
+                            message: 'Check already triggered. Mobile app will check DNS soon.',
+                            timestamp: existing.timestamp,
+                            cached: true,
+                        }, 200, corsHeaders);
+                    }
+                } catch {
+                    // If parse fails, continue to update
+                }
+            }
+
+            await env.SENTINEL_DATA.put(triggerKey, JSON.stringify({
+                triggered: true,
+                timestamp,
+                requested_by: 'frontend',
+            }), {
+                expirationTtl: 300, // 5 minutes
+            });
         }
 
         return jsonResponse({
@@ -1492,7 +1609,7 @@ async function handleResultsStream(
                 }
 
                 // Schedule next poll (recursive setTimeout)
-                setTimeout(poll, 3000);
+                setTimeout(poll, 1000);
             };
 
             // Start polling
@@ -1609,29 +1726,28 @@ async function handleSaveFrontendDomains(
         }
 
         // Extract hostnames from Domain objects if needed
-        // Keep www. prefix - treat www.domain.com and domain.com as separate
         const hostnames = domains.map(domain => {
             if (typeof domain === 'string') {
                 if (domain.startsWith('http://') || domain.startsWith('https://')) {
                     try {
                         const url = new URL(domain);
-                        return url.hostname.toLowerCase(); // Keep www. prefix
+                        return url.hostname.replace(/^www\./, '').toLowerCase();
                     } catch {
-                        return domain.toLowerCase();
+                        return domain.replace(/^www\./, '').toLowerCase();
                     }
                 }
-                return domain.toLowerCase();
+                return domain.replace(/^www\./, '').toLowerCase();
             } else if (domain.hostname) {
-                return domain.hostname.toLowerCase();
+                return domain.hostname.replace(/^www\./, '').toLowerCase();
             } else if (domain.url) {
                 try {
                     const url = new URL(domain.url.startsWith('http') ? domain.url : `https://${domain.url}`);
-                    return url.hostname.toLowerCase();
+                    return url.hostname.replace(/^www\./, '').toLowerCase();
                 } catch {
-                    return domain.url.toLowerCase();
+                    return domain.url.replace(/^www\./, '').toLowerCase();
                 }
             }
-            return String(domain).toLowerCase();
+            return String(domain).replace(/^www\./, '').toLowerCase();
         });
 
         // Normalize: remove duplicates and sort
@@ -1646,17 +1762,45 @@ async function handleSaveFrontendDomains(
 
         // Save to D1 (primary storage)
         // First, delete domains that are not in the new list
-        const domainsToDelete = existingDomains.filter(existing =>
-            !uniqueHostnames.some(newHostname =>
-                newHostname.toLowerCase() === existing.toLowerCase()
-            )
-        );
+        // Normalize both lists for comparison (lowercase, no www prefix)
+        const normalizeHostname = (h: string) => h.toLowerCase().replace(/^www\./, '');
+        const normalizedNew = uniqueHostnames.map(normalizeHostname);
+        
+        const domainsToDelete = existingDomains.filter(existing => {
+            const normalizedExisting = normalizeHostname(existing);
+            return !normalizedNew.includes(normalizedExisting);
+        });
 
         if (domainsToDelete.length > 0) {
             console.log(`[handleSaveFrontendDomains] Deleting ${domainsToDelete.length} old domains:`, domainsToDelete);
-            const deleteStmt = env.DB.prepare("DELETE FROM domains WHERE hostname = ?");
-            const deleteBatch = domainsToDelete.map(hostname => deleteStmt.bind(hostname));
-            await env.DB.batch(deleteBatch);
+            
+            // Delete domains and their related results
+            // For each hostname to delete, find all variations (with/without www, case variations)
+            const deleteDomainBatch: any[] = [];
+            const deleteResultsBatch: any[] = [];
+            
+            for (const hostnameToDelete of domainsToDelete) {
+                const normalized = normalizeHostname(hostnameToDelete);
+                
+                // Find all hostnames in D1 that normalize to the same value
+                // Get all domains and filter in JavaScript (more reliable than SQL REPLACE)
+                const allDomains = await env.DB.prepare("SELECT hostname FROM domains").all();
+                const matchingHostnames = (allDomains.results as any[])
+                    .map(row => row.hostname)
+                    .filter(h => normalizeHostname(h) === normalized);
+                
+                // Delete each matching domain and its results
+                for (const actualHostname of matchingHostnames) {
+                    deleteDomainBatch.push(env.DB.prepare("DELETE FROM domains WHERE hostname = ?").bind(actualHostname));
+                    deleteResultsBatch.push(env.DB.prepare("DELETE FROM results WHERE hostname = ?").bind(actualHostname));
+                }
+            }
+            
+            if (deleteDomainBatch.length > 0) {
+                await env.DB.batch(deleteDomainBatch);
+                await env.DB.batch(deleteResultsBatch);
+                console.log(`[handleSaveFrontendDomains] Deleted ${deleteDomainBatch.length} domain records and their results from D1`);
+            }
         }
 
         // Then, insert or replace domains in the new list
@@ -1664,20 +1808,23 @@ async function handleSaveFrontendDomains(
         const batch = uniqueHostnames.map(hostname => {
             const domainObj = domains.find((d: any) => {
                 if (typeof d === 'string') {
-                    // Keep www. prefix for matching
-                    return d.toLowerCase() === hostname;
+                    const normalized = d.replace(/^www\./i, '').toLowerCase();
+                    return normalized === hostname;
                 }
                 // Try to match by hostname first
                 if (d.hostname) {
-                    if (d.hostname.toLowerCase() === hostname) return true;
+                    const normalized = d.hostname.replace(/^www\./i, '').toLowerCase();
+                    if (normalized === hostname) return true;
                 }
                 // Try to match by url
                 if (d.url) {
                     try {
                         const url = new URL(d.url.startsWith('http') ? d.url : `https://${d.url}`);
-                        if (url.hostname.toLowerCase() === hostname) return true;
+                        const normalized = url.hostname.replace(/^www\./i, '').toLowerCase();
+                        if (normalized === hostname) return true;
                     } catch {
-                        if (d.url.toLowerCase() === hostname) return true;
+                        const normalized = d.url.replace(/^www\./i, '').toLowerCase();
+                        if (normalized === hostname) return true;
                     }
                 }
                 return false;
@@ -1695,7 +1842,14 @@ async function handleSaveFrontendDomains(
         });
         await env.DB.batch(batch);
 
-        // KV backup removed - D1 is the only storage now
+        // Also save to KV for backward compatibility
+        try {
+            await env.SENTINEL_DATA.put('frontend:domains', JSON.stringify(domains));
+            await env.SENTINEL_DATA.put('domains:list', JSON.stringify(uniqueHostnames));
+        } catch (kvError: any) {
+            // KV error is not critical - D1 is primary
+            console.warn('Failed to update KV (non-critical):', kvError);
+        }
 
         console.log(`Frontend sync: Saved ${uniqueHostnames.length} domains to D1`);
 
@@ -1855,7 +2009,13 @@ async function handleSaveFrontendSettings(
         );
         await env.DB.batch(batch);
 
-        // KV backup removed - D1 is the only storage now
+        // Also save to KV for backward compatibility
+        try {
+            await env.SENTINEL_DATA.put('frontend:settings', JSON.stringify(settings));
+        } catch (kvError: any) {
+            // KV error is not critical - D1 is primary
+            console.warn('Failed to update KV (non-critical):', kvError);
+        }
 
         console.log('Settings saved to D1');
 
@@ -1875,32 +2035,111 @@ async function handleSaveFrontendSettings(
     }
 }
 
-// NOTE: Old sendTelegramAlert function removed. Now using consolidated message in checkAndSendAlerts below.
+// Send Telegram alert
+async function sendTelegramAlert(
+    botToken: string,
+    chatId: string,
+    hostname: string,
+    results: Record<string, { status: string }>
+): Promise<boolean> {
+    if (!botToken || !chatId) return false;
+
+    // แสดงเฉพาะ AIS, True, DTAC พร้อม emoji
+    // Note: True และ DTAC เป็นค่ายเดียวกัน (True Corporation) → ใช้ข้อมูลเดียวกัน
+    const availableKeys = Object.keys(results);
+    console.log(`🔔 [Alert] Available ISP keys in results for ${hostname}:`, availableKeys);
+    
+    // หา status ของแต่ละ ISP (case-insensitive)
+    const findISPStatus = (keys: string[]): string | null => {
+        for (const key of keys) {
+            // Try exact match first
+            if (results[key]) {
+                return results[key].status;
+            }
+            // Try case-insensitive match
+            const matchedKey = Object.keys(results).find(k => k.toLowerCase() === key.toLowerCase());
+            if (matchedKey) {
+                return results[matchedKey].status;
+            }
+        }
+        return null;
+    };
+    
+    // หา status ของ AIS
+    const aisStatus = findISPStatus(['AIS', 'ais']);
+    
+    // หา status ของ DTAC (ใช้สำหรับทั้ง True และ DTAC เพราะเป็นค่ายเดียวกัน)
+    const dtacStatus = findISPStatus(['DTAC', 'dtac']);
+    
+    // สร้างรายการ ISP ที่มีข้อมูล
+    const ispStatusList: string[] = [];
+    
+    // AIS
+    if (aisStatus) {
+        if (aisStatus === 'BLOCKED') {
+            ispStatusList.push(`🚫 AIS`);
+        } else if (aisStatus === 'ACTIVE') {
+            ispStatusList.push(`✅ AIS`);
+        }
+    }
+    
+    // True - ใช้ข้อมูลจาก DTAC (เพราะเป็นค่ายเดียวกัน)
+    if (dtacStatus) {
+        if (dtacStatus === 'BLOCKED') {
+            ispStatusList.push(`🚫 True`);
+        } else if (dtacStatus === 'ACTIVE') {
+            ispStatusList.push(`✅ True`);
+        }
+    }
+    
+    // DTAC
+    if (dtacStatus) {
+        if (dtacStatus === 'BLOCKED') {
+            ispStatusList.push(`🚫 DTAC`);
+        } else if (dtacStatus === 'ACTIVE') {
+            ispStatusList.push(`✅ DTAC`);
+        }
+    }
+    
+    const ispStatusListString = ispStatusList.join('\n');
+
+    const message = `
+🚨 <b>DOMAIN ALERT</b> 🚨
+
+<b>Domain:</b> ${hostname}
+<b>Status:</b> BLOCKED / UNREACHABLE
+<b>Detected on:</b>
+${ispStatusListString}
+
+<i>Please check the dashboard for more details.</i>
+`;
+
+    try {
+        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                chat_id: chatId,
+                text: message,
+                parse_mode: 'HTML',
+            }),
+        });
+
+        const data = await response.json();
+        return data.ok;
+    } catch (error) {
+        console.error('Failed to send Telegram alert', error);
+        return false;
+    }
+}
 
 // Check and send alerts for blocked domains
 async function checkAndSendAlerts(env: Env): Promise<void> {
-    const startTime = Date.now();
-    let alertStatus = 'started';
-    let alertDetails = '';
-
-    // Helper to log alert attempt to D1
-    const logAlert = async (status: string, details: string) => {
-        try {
-            await env.DB.prepare(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
-            ).bind(
-                `alert_log:${startTime}`,
-                JSON.stringify({ status, details, timestamp: Date.now() }),
-                Date.now()
-            ).run();
-        } catch (e) {
-            console.error('Failed to log alert:', e);
-        }
-    };
-
     try {
         console.log('🔔 [Alert] Checking for blocked domains and sending alerts...');
-        await logAlert('started', 'Beginning alert check');
 
         // Get settings from D1
         const settingsResult = await env.DB.prepare(
@@ -1921,8 +2160,6 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
         const telegramBotToken = settings.telegramBotToken || '';
         const defaultTelegramChatId = settings.telegramChatId || '';
 
-        console.log(`🔔 [Alert] Telegram settings - Token: ${telegramBotToken ? 'configured' : 'NOT SET'}, ChatID: ${defaultTelegramChatId ? 'configured' : 'NOT SET'}`);
-
         if (!telegramBotToken) {
             console.log('🔔 [Alert] No Telegram bot token configured, skipping alerts');
             return;
@@ -1938,23 +2175,10 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
             return;
         }
 
-        console.log(`🔔 [Alert] Found ${domainsResult.results.length} domains to check`);
-
-        // Collect all domain statuses for consolidated message
-        type DomainStatus = {
-            hostname: string;
-            telegramChatId: string | null;
-            aisStatus: string | null;
-            trueStatus: string | null;
-            dtacStatus: string | null;
-        };
-
-        const allDomainStatuses: DomainStatus[] = [];
-
-        // For each domain, get latest results
+        // For each domain, get latest results and check for blocked ISPs
         for (const domainRow of domainsResult.results) {
-            const hostname = domainRow.hostname as string;
-            const domainChatId = domainRow.telegram_chat_id as string | null;
+            const hostname = domainRow.hostname;
+            const domainTelegramChatId = domainRow.telegram_chat_id || null;
 
             // Get latest results for this domain (latest result per ISP)
             const resultsQuery = env.DB.prepare(`
@@ -1975,150 +2199,79 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
                 continue; // No results for this domain yet
             }
 
-            // Extract ISP statuses
-            const findISPStatus = (ispNames: string[]): string | null => {
-                for (const name of ispNames) {
-                    const row = resultsData.results?.find((r: any) =>
-                        r.isp_name?.toLowerCase() === name.toLowerCase()
-                    );
-                    if (row) return (row as any).status;
+            // Group results by ISP name
+            // Note: 'True' and 'DTAC' may both exist in D1, but we want to show them separately
+            // However, for 'True/DTAC' we should handle it specially
+            const resultsByISP: Record<string, { status: string }> = {};
+            let hasBlocked = false;
+
+            resultsData.results.forEach((row: any) => {
+                const ispName = row.isp_name;
+                const status = row.status;
+
+                // Store results with original ISP name from D1
+                // If we already have this ISP name, prefer BLOCKED status
+                if (resultsByISP[ispName]) {
+                    if (status === 'BLOCKED') {
+                        resultsByISP[ispName] = { status };
+                    }
+                } else {
+                    resultsByISP[ispName] = { status };
                 }
-                return null;
-            };
 
-            const aisStatus = findISPStatus(['AIS', 'ais']);
-            const dtacStatus = findISPStatus(['DTAC', 'dtac']);
-            let trueStatus = findISPStatus(['True', 'true', 'TRUE']);
-
-            // If no True data, use DTAC (same network)
-            if (!trueStatus && dtacStatus) {
-                trueStatus = dtacStatus;
-            }
-
-            allDomainStatuses.push({
-                hostname,
-                telegramChatId: domainChatId,
-                aisStatus,
-                trueStatus,
-                dtacStatus
+                if (status === 'BLOCKED') {
+                    hasBlocked = true;
+                }
             });
 
-            console.log(`🔔 [Alert] Domain ${hostname}: chatId=${domainChatId}, AIS=${aisStatus}, True=${trueStatus}, DTAC=${dtacStatus}`);
+            console.log(`🔔 [Alert] Domain ${hostname} results:`, JSON.stringify(resultsByISP));
+
+            // Only send alert if there are blocked ISPs
+            if (!hasBlocked) {
+                continue;
+            }
+
+            // Determine which chat IDs to send to
+            const chatIdsToSend: string[] = [];
+
+            // Add domain's custom chat ID if available
+            if (domainTelegramChatId) {
+                chatIdsToSend.push(domainTelegramChatId);
+            }
+
+            // Add default chat ID if available and different from domain chat ID
+            if (defaultTelegramChatId && defaultTelegramChatId !== domainTelegramChatId) {
+                chatIdsToSend.push(defaultTelegramChatId);
+            }
+
+            // If no chat IDs, skip
+            if (chatIdsToSend.length === 0) {
+                console.log(`🔔 [Alert] No Telegram chat ID configured for ${hostname}, skipping`);
+                continue;
+            }
+
+            // Send alerts to all chat IDs
+            const sendPromises = chatIdsToSend.map(chatId =>
+                sendTelegramAlert(telegramBotToken, chatId, hostname, resultsByISP)
+                    .then(sent => {
+                        if (sent) {
+                            console.log(`🔔 [Alert] Telegram alert sent for ${hostname} to ${chatId}`);
+                        } else {
+                            console.error(`🔔 [Alert] Failed to send Telegram alert for ${hostname} to ${chatId}`);
+                        }
+                        return sent;
+                    })
+                    .catch(error => {
+                        console.error(`🔔 [Alert] Error sending Telegram alert for ${hostname} to ${chatId}:`, error);
+                        return false;
+                    })
+            );
+
+            await Promise.all(sendPromises);
         }
 
-        // If no domain statuses collected, skip
-        if (allDomainStatuses.length === 0) {
-            console.log('🔔 [Alert] No domain statuses to report');
-            return;
-        }
-
-        // Helper function to build message for a list of domains
-        const buildMessage = (domains: DomainStatus[]): string => {
-            let lines: string[] = [];
-            lines.push('🔔 <b>สถานะเว็บไซต์</b>');
-
-            let table = '<pre>';
-            table += 'Domain             | A  | T  | D \n';
-            table += '-------------------|----|----|----\n';
-
-            for (const domain of domains) {
-                // Keep www. prefix - don't strip it
-                let dName = domain.hostname;
-                if (dName.length > 18) {
-                    dName = dName.substring(0, 17) + '…';
-                }
-                dName = dName.padEnd(19, ' ');
-
-                const getStatusEmoji = (status: string | null) => {
-                    if (!status) return '➖';
-                    if (status === 'BLOCKED') return '🚫';
-                    if (status === 'ACTIVE') return '✅';
-                    return '❓';
-                };
-
-                const a = getStatusEmoji(domain.aisStatus);
-                const t = getStatusEmoji(domain.trueStatus);
-                const d = getStatusEmoji(domain.dtacStatus);
-
-                table += `${dName}| ${a} | ${t} | ${d}\n`;
-            }
-            table += '</pre>';
-
-            lines.push(table);
-            lines.push('<i>A = AIS, T = True, D = DTAC</i>');
-
-            return lines.join('\n');
-        };
-
-        // Helper function to send Telegram message
-        const sendTelegram = async (chatId: string, message: string): Promise<boolean> => {
-            try {
-                const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: chatId,
-                        text: message,
-                        parse_mode: 'HTML',
-                    }),
-                });
-
-                const data = await response.json() as any;
-                return data.ok;
-            } catch (error) {
-                console.error(`🔔 [Alert] Error sending to ${chatId}:`, error);
-                return false;
-            }
-        };
-
-        // Group domains by their custom chat ID
-        const domainsByChatId = new Map<string, DomainStatus[]>();
-
-        for (const domain of allDomainStatuses) {
-            if (domain.telegramChatId) {
-                // Add to custom chat ID group
-                if (!domainsByChatId.has(domain.telegramChatId)) {
-                    domainsByChatId.set(domain.telegramChatId, []);
-                }
-                domainsByChatId.get(domain.telegramChatId)!.push(domain);
-            }
-        }
-
-        // Send to each custom chat ID (only their domains)
-        let customSentCount = 0;
-        let customFailCount = 0;
-        for (const [chatId, domains] of domainsByChatId) {
-            const message = buildMessage(domains);
-            const sent = await sendTelegram(chatId, message);
-            if (sent) {
-                console.log(`🔔 [Alert] Sent to custom chat ${chatId}: ${domains.map(d => d.hostname).join(', ')}`);
-                customSentCount++;
-            } else {
-                console.error(`🔔 [Alert] Failed to send to custom chat ${chatId}`);
-                customFailCount++;
-            }
-        }
-
-        // Send to default chat ID (ALL domains)
-        let defaultSent = false;
-        if (defaultTelegramChatId) {
-            const allDomainsMessage = buildMessage(allDomainStatuses);
-            const sent = await sendTelegram(defaultTelegramChatId, allDomainsMessage);
-            if (sent) {
-                console.log(`🔔 [Alert] Sent ALL domains to default chat ${defaultTelegramChatId}`);
-                defaultSent = true;
-            } else {
-                console.error(`🔔 [Alert] Failed to send to default chat ${defaultTelegramChatId}`);
-            }
-        }
-
-        // Log final result
-        const finalDetails = `Sent: default=${defaultSent}, custom=${customSentCount}, failed=${customFailCount}, domains=${allDomainStatuses.length}`;
-        await logAlert('completed', finalDetails);
-        console.log(`🔔 [Alert] Finished - ${finalDetails}`);
-    } catch (error: any) {
-        await logAlert('error', error.message || String(error));
+        console.log('🔔 [Alert] Finished checking and sending alerts');
+    } catch (error) {
         console.error('🔔 [Alert] Error in checkAndSendAlerts:', error);
     }
 }
@@ -2136,66 +2289,5 @@ function jsonResponse(
             ...corsHeaders,
         },
     });
-}
-
-// Debug Status (to diagnose system issues)
-async function handleDebugStatus(
-    request: Request,
-    env: Env,
-    corsHeaders: Record<string, string>
-): Promise<Response> {
-    try {
-        const now = Date.now();
-        const status: any = {
-            systemTime: new Date(now).toISOString(),
-            timestamp: now,
-            env: {
-                hasDB: !!env.DB,
-                hasKV: !!env.SENTINEL_DATA
-            }
-        };
-
-        // Check settings (Next Scan Time)
-        try {
-            const result = await env.DB.prepare(
-                "SELECT * FROM settings WHERE key = 'next_scan_time' OR key = 'trigger:check'"
-            ).all();
-
-            status.settings = result.results;
-        } catch (e: any) {
-            status.settingsError = e.message;
-        }
-
-        // Check Results Stats
-        try {
-            const count = await env.DB.prepare("SELECT COUNT(*) as total FROM results").first();
-            const latest = await env.DB.prepare("SELECT MAX(timestamp) as last_update FROM results").first();
-
-            status.results = {
-                count: count?.total,
-                lastUpdate: latest?.last_update ? new Date(latest.last_update as number).toISOString() : 'Never'
-            };
-        } catch (e: any) {
-            status.resultsError = e.message;
-        }
-
-        // Check Domains
-        try {
-            const domains = await env.DB.prepare("SELECT COUNT(*) as total FROM domains WHERE is_monitoring = 1").first();
-            status.domains = {
-                monitoringCount: domains?.total
-            };
-        } catch (e: any) {
-            status.domainsError = e.message;
-        }
-
-        return jsonResponse({
-            success: true,
-            status
-        }, 200, corsHeaders);
-
-    } catch (error: any) {
-        return jsonResponse({ error: error.message }, 500, corsHeaders);
-    }
 }
 
