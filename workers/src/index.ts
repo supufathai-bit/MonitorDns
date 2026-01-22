@@ -123,9 +123,10 @@ export default {
                 console.log(`⏰ [Cron] Not time yet. Time until scan: ${Math.round(timeUntilScan / 1000 / 60)} minutes`);
             }
 
-            // Always check and send alerts based on latest results in D1
+            // Check and send alerts based on latest results in D1
             // Mobile app sends results to /api/mobile-sync, which saves to D1
             // This cron job checks D1 every 10 minutes and sends alerts for blocked domains
+            // BUT only sends if interval has passed (respects checkInterval from settings)
             console.log('🔔 [Cron] Checking for blocked domains and sending alerts from D1 results...');
             await checkAndSendAlerts(env);
         } catch (error) {
@@ -2256,14 +2257,14 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
             return;
         }
 
-        // รวบรวมข้อมูลโดเมนที่ถูกบล็อกทั้งหมด
-        const blockedDomains: Array<{
+        // รวบรวมข้อมูลทุกโดเมน (ไม่ใช่แค่ที่ถูกบล็อก)
+        const allDomains: Array<{
             hostname: string;
             domainTelegramChatId: string | null;
             resultsByISP: Record<string, { status: string }>;
         }> = [];
 
-        // For each domain, get latest results and check for blocked ISPs
+        // For each domain, get latest results
         for (const domainRow of domainsResult.results) {
             const hostname = domainRow.hostname;
             const domainTelegramChatId = domainRow.telegram_chat_id || null;
@@ -2285,79 +2286,82 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
 
             console.log(`🔔 [Alert] Domain ${hostname}: Found ${resultsData.results?.length || 0} results in D1`);
 
-            if (!resultsData.results || resultsData.results.length === 0) {
-                console.log(`🔔 [Alert] Domain ${hostname}: No results in D1, skipping`);
-                continue; // No results for this domain yet
-            }
-
             // Group results by ISP name
-            // Note: 'True' and 'DTAC' may both exist in D1, but we want to show them separately
-            // However, for 'True/DTAC' we should handle it specially
             const resultsByISP: Record<string, { status: string }> = {};
-            let hasBlocked = false;
 
-            resultsData.results.forEach((row: any) => {
-                const ispName = row.isp_name;
-                const status = row.status;
+            if (resultsData.results && resultsData.results.length > 0) {
+                resultsData.results.forEach((row: any) => {
+                    const ispName = row.isp_name;
+                    const status = row.status;
 
-                // Store results with original ISP name from D1
-                // If we already have this ISP name, prefer BLOCKED status
-                if (resultsByISP[ispName]) {
-                    if (status === 'BLOCKED') {
+                    // Store results with original ISP name from D1
+                    // If we already have this ISP name, prefer BLOCKED status
+                    if (resultsByISP[ispName]) {
+                        if (status === 'BLOCKED') {
+                            resultsByISP[ispName] = { status };
+                        }
+                    } else {
                         resultsByISP[ispName] = { status };
                     }
-                } else {
-                    resultsByISP[ispName] = { status };
-                }
-
-                if (status === 'BLOCKED') {
-                    hasBlocked = true;
-                }
-            });
+                });
+            } else {
+                // ถ้ายังไม่มีผลลัพธ์ ให้ใช้ PENDING
+                resultsByISP['AIS'] = { status: 'PENDING' };
+                resultsByISP['True'] = { status: 'PENDING' };
+                resultsByISP['DTAC'] = { status: 'PENDING' };
+            }
 
             console.log(`🔔 [Alert] Domain ${hostname} results:`, JSON.stringify(resultsByISP));
 
-            // Only add to blocked domains list if there are blocked ISPs
-            if (hasBlocked) {
-                blockedDomains.push({
-                    hostname,
-                    domainTelegramChatId,
-                    resultsByISP
-                });
-            }
+            // เพิ่มทุกโดเมน (ไม่ใช่แค่ที่ถูกบล็อก)
+            allDomains.push({
+                hostname,
+                domainTelegramChatId,
+                resultsByISP
+            });
         }
 
-        // ถ้าไม่มีโดเมนที่ถูกบล็อก ไม่ต้องส่งแจ้งเตือน
-        if (blockedDomains.length === 0) {
-            console.log('🔔 [Alert] No blocked domains found');
+        // ถ้าไม่มีโดเมนเลย ไม่ต้องส่งแจ้งเตือน
+        if (allDomains.length === 0) {
+            console.log('🔔 [Alert] No domains found');
             return;
         }
 
-        // ตรวจสอบว่าเวลาผ่านไปตาม interval แล้วหรือยัง (ตรวจสอบครั้งเดียวสำหรับทุกโดเมน)
+        // ตรวจสอบว่าเวลาผ่านไปตาม interval แล้วหรือยัง
         const now = Date.now();
         
-        // กำหนด chat IDs ที่จะส่ง (รวม default และ domain-specific)
-        const allChatIds = new Set<string>();
-        if (defaultTelegramChatId) {
-            allChatIds.add(defaultTelegramChatId);
-        }
-        blockedDomains.forEach(domain => {
-            if (domain.domainTelegramChatId) {
-                allChatIds.add(domain.domainTelegramChatId);
-            }
-        });
+        // จัดกลุ่มโดเมนตาม chat ID ที่จะส่ง
+        // 1. โดเมนที่มี custom chat ID → ส่งไปห้องนั้น
+        // 2. โดเมนที่ไม่มี custom chat ID → ส่งไป default chat (ถ้ามี)
+        const domainsByChatId = new Map<string, Array<{
+            hostname: string;
+            domainTelegramChatId: string | null;
+            resultsByISP: Record<string, { status: string }>;
+        }>>();
 
-        if (allChatIds.size === 0) {
+        // จัดกลุ่มโดเมนตาม chat ID
+        for (const domain of allDomains) {
+            const chatIdToUse = domain.domainTelegramChatId || defaultTelegramChatId;
+            
+            if (chatIdToUse) {
+                if (!domainsByChatId.has(chatIdToUse)) {
+                    domainsByChatId.set(chatIdToUse, []);
+                }
+                domainsByChatId.get(chatIdToUse)!.push(domain);
+            }
+        }
+
+        if (domainsByChatId.size === 0) {
             console.log('🔔 [Alert] No Telegram chat IDs configured, skipping alerts');
             return;
         }
 
-        // ส่งตารางรวมทุกโดเมนให้แต่ละ chat ID
+        // ส่งตารางให้แต่ละ chat ID
         const sendPromises: Promise<boolean>[] = [];
 
-        for (const chatId of allChatIds) {
-            // ตรวจสอบ last alert sent timestamp (ใช้ key ร่วมกันสำหรับทุกโดเมน)
-            const lastAlertKey = `last_alert:all_domains:${chatId}`;
+        for (const [chatId, domainsForThisChat] of domainsByChatId.entries()) {
+            // ตรวจสอบ last alert sent timestamp สำหรับ chat นี้
+            const lastAlertKey = `last_alert:chat:${chatId}`;
             const lastAlertResult = await env.DB.prepare(
                 "SELECT value, updated_at FROM settings WHERE key = ?"
             ).bind(lastAlertKey).first();
@@ -2400,14 +2404,14 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
             }
 
             if (shouldSend) {
-                console.log(`🔔 [Alert] Sending combined alert table to ${chatId} (${blockedDomains.length} blocked domains)`);
+                console.log(`🔔 [Alert] Sending alert table to ${chatId} (${domainsForThisChat.length} domains)`);
                 sendPromises.push(
-                    sendTelegramAlertTable(telegramBotToken, chatId, blockedDomains)
+                    sendTelegramAlertTable(telegramBotToken, chatId, domainsForThisChat)
                         .then(async (sent) => {
                             if (sent) {
                                 console.log(`🔔 [Alert] Telegram alert table sent to ${chatId}`);
                                 // บันทึก timestamp ของการส่งแจ้งเตือน
-                                const alertData = { timestamp: now, chatId, domainCount: blockedDomains.length };
+                                const alertData = { timestamp: now, chatId, domainCount: domainsForThisChat.length };
                                 await env.DB.prepare(
                                     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
                                 ).bind(
