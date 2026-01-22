@@ -71,33 +71,71 @@ export default {
             if (timeUntilScan <= 0 && timeUntilScan >= -300000) { // -5 minutes tolerance
                 console.log(`⏰ [Cron] Time to scan! nextScanTime: ${new Date(nextScanTime).toISOString()}, now: ${new Date(now).toISOString()}`);
 
-                // Trigger mobile app to check DNS
+                // Check if mobile app responded to last trigger (within last 30 minutes)
                 const triggerKey = 'trigger:check';
-                const triggerData = {
-                    triggered: true,
-                    timestamp: now,
-                    source: 'cron-auto-scan'
-                };
+                const lastTriggerResult = await env.DB.prepare(
+                    "SELECT value, updated_at FROM settings WHERE key = ?"
+                ).bind(triggerKey).first();
 
-                // Save trigger to D1
-                try {
-                    await env.DB.prepare(
-                        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
-                    ).bind(
-                        triggerKey,
-                        JSON.stringify(triggerData),
-                        now
-                    ).run();
-                    console.log('⏰ [Cron] Trigger check saved to D1');
-                } catch (error) {
-                    console.error('⏰ [Cron] Error saving trigger to D1:', error);
+                let shouldTriggerMobileApp = true;
+                let shouldDoSelfCheck = false;
+
+                if (lastTriggerResult) {
+                    try {
+                        const lastTriggerData = JSON.parse(lastTriggerResult.value as string);
+                        const lastTriggerTime = lastTriggerData.timestamp || lastTriggerResult.updated_at;
+                        const timeSinceLastTrigger = now - lastTriggerTime;
+                        const MOBILE_APP_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+                        // If trigger was set more than 30 minutes ago and still exists, mobile app didn't respond
+                        if (timeSinceLastTrigger > MOBILE_APP_TIMEOUT) {
+                            console.log(`⏰ [Cron] Mobile app did not respond within ${MOBILE_APP_TIMEOUT / 1000 / 60} minutes. Will perform self-check.`);
+                            shouldTriggerMobileApp = false;
+                            shouldDoSelfCheck = true;
+                        } else {
+                            console.log(`⏰ [Cron] Mobile app trigger still active (${Math.round(timeSinceLastTrigger / 1000 / 60)} minutes ago). Waiting for mobile app response.`);
+                            shouldTriggerMobileApp = false;
+                        }
+                    } catch (error) {
+                        console.warn('⏰ [Cron] Error parsing last trigger data:', error);
+                        // Continue to trigger mobile app
+                    }
                 }
 
-                // Also save to KV for backward compatibility
-                try {
-                    await env.SENTINEL_DATA.put(triggerKey, JSON.stringify(triggerData));
-                } catch (error) {
-                    console.warn('⏰ [Cron] Failed to save trigger to KV (non-critical):', error);
+                // Trigger mobile app if needed
+                if (shouldTriggerMobileApp) {
+                    const triggerData = {
+                        triggered: true,
+                        timestamp: now,
+                        source: 'cron-auto-scan'
+                    };
+
+                    // Save trigger to D1
+                    try {
+                        await env.DB.prepare(
+                            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+                        ).bind(
+                            triggerKey,
+                            JSON.stringify(triggerData),
+                            now
+                        ).run();
+                        console.log('⏰ [Cron] Trigger check saved to D1');
+                    } catch (error) {
+                        console.error('⏰ [Cron] Error saving trigger to D1:', error);
+                    }
+
+                    // Also save to KV for backward compatibility
+                    try {
+                        await env.SENTINEL_DATA.put(triggerKey, JSON.stringify(triggerData));
+                    } catch (error) {
+                        console.warn('⏰ [Cron] Failed to save trigger to KV (non-critical):', error);
+                    }
+                }
+
+                // Perform self-check if mobile app didn't respond
+                if (shouldDoSelfCheck) {
+                    console.log('⏰ [Cron] Performing self-check using DNS Resolver Service...');
+                    await performSelfCheck(env, now);
                 }
 
                 // Update next scan time
@@ -1909,6 +1947,7 @@ async function handleGetFrontendSettings(
                     checkInterval: 360,
                     backendUrl: '',
                     workersUrl: '',
+                    dnsResolverServiceUrl: '',
                 };
 
                 return jsonResponse({
@@ -1940,6 +1979,7 @@ async function handleGetFrontendSettings(
                 checkInterval: 360,
                 backendUrl: '',
                 workersUrl: '',
+                dnsResolverServiceUrl: '',
             },
         }, 200, corsHeaders);
 
@@ -2133,6 +2173,187 @@ ${ispStatusListString}
     } catch (error) {
         console.error('Failed to send Telegram alert', error);
         return false;
+    }
+}
+
+// Perform self-check using DNS Resolver Service when mobile app doesn't respond
+async function performSelfCheck(env: Env, timestamp: number): Promise<void> {
+    try {
+        console.log('🔍 [SelfCheck] Starting self-check...');
+
+        // Get DNS Resolver Service URL from settings
+        const settingsResult = await env.DB.prepare(
+            "SELECT key, value FROM settings"
+        ).all();
+
+        const settings: any = {};
+        if (settingsResult.results) {
+            settingsResult.results.forEach((row: any) => {
+                try {
+                    settings[row.key] = JSON.parse(row.value);
+                } catch {
+                    settings[row.key] = row.value;
+                }
+            });
+        }
+
+        const dnsResolverServiceUrl = settings.dnsResolverServiceUrl || settings.DNS_RESOLVER_SERVICE_URL || '';
+
+        if (!dnsResolverServiceUrl) {
+            console.log('🔍 [SelfCheck] No DNS Resolver Service URL configured. Skipping self-check.');
+            console.log('💡 [SelfCheck] To enable self-check, configure DNS Resolver Service URL in settings.');
+            return;
+        }
+
+        // Get all monitoring domains
+        const domainsResult = await env.DB.prepare(
+            "SELECT hostname FROM domains WHERE is_monitoring = 1"
+        ).all();
+
+        if (!domainsResult.results || domainsResult.results.length === 0) {
+            console.log('🔍 [SelfCheck] No domains to check');
+            return;
+        }
+
+        // Get device info from devices table to know which ISPs are available
+        const devicesResult = await env.DB.prepare(
+            "SELECT device_info, last_sync FROM devices ORDER BY last_sync DESC LIMIT 10"
+        ).all();
+
+        // Extract unique ISPs from device info
+        const availableISPs = new Set<string>();
+        if (devicesResult.results) {
+            devicesResult.results.forEach((row: any) => {
+                try {
+                    const deviceInfo = JSON.parse(row.device_info as string || '{}');
+                    if (deviceInfo.isp) {
+                        availableISPs.add(deviceInfo.isp);
+                    }
+                } catch {
+                    // Ignore parse errors
+                }
+            });
+        }
+
+        // If no device info, use default ISPs
+        if (availableISPs.size === 0) {
+            availableISPs.add('AIS');
+            availableISPs.add('True');
+            availableISPs.add('DTAC');
+            availableISPs.add('NT');
+            console.log('🔍 [SelfCheck] No device info found, using default ISPs');
+        } else {
+            console.log(`🔍 [SelfCheck] Found ${availableISPs.size} ISPs from device info:`, Array.from(availableISPs));
+        }
+
+        const domains = domainsResult.results.map((row: any) => row.hostname);
+        console.log(`🔍 [SelfCheck] Checking ${domains.length} domains for ${availableISPs.size} ISPs`);
+
+        // Perform DNS checks for each domain and ISP
+        const results: Array<{
+            hostname: string;
+            isp_name: string;
+            status: string;
+            ip: string;
+            latency?: number;
+            timestamp: number;
+        }> = [];
+
+        for (const hostname of domains) {
+            for (const ispName of availableISPs) {
+                try {
+                    console.log(`🔍 [SelfCheck] Checking ${hostname} via ${ispName}...`);
+
+                    // Call DNS Resolver Service
+                    const checkUrl = `${dnsResolverServiceUrl}/api/check`;
+                    const checkResponse = await fetch(checkUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            hostname,
+                            isp_name: ispName,
+                        }),
+                        signal: AbortSignal.timeout(15000), // 15 second timeout
+                    });
+
+                    if (!checkResponse.ok) {
+                        console.warn(`🔍 [SelfCheck] Failed to check ${hostname} via ${ispName}: ${checkResponse.status}`);
+                        continue;
+                    }
+
+                    const checkData = await checkResponse.json();
+                    const status = checkData.status || 'ERROR';
+                    const ip = checkData.ip || '';
+                    const latency = checkData.latency || null;
+
+                    results.push({
+                        hostname,
+                        isp_name: ispName,
+                        status,
+                        ip,
+                        latency,
+                        timestamp,
+                    });
+
+                    console.log(`🔍 [SelfCheck] ${hostname} via ${ispName}: ${status} (${ip || 'no IP'})`);
+
+                    // Small delay to avoid overwhelming the DNS Resolver Service
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                } catch (error: any) {
+                    console.error(`🔍 [SelfCheck] Error checking ${hostname} via ${ispName}:`, error.message);
+                    // Continue with next check
+                }
+            }
+        }
+
+        if (results.length === 0) {
+            console.log('🔍 [SelfCheck] No results to save');
+            return;
+        }
+
+        // Save results to D1
+        console.log(`🔍 [SelfCheck] Saving ${results.length} results to D1...`);
+        const d1Stmt = env.DB.prepare(
+            "INSERT OR REPLACE INTO results (id, hostname, isp_name, status, ip, latency, device_id, device_info, timestamp, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+
+        const d1Batch = results.map(result => {
+            const resultId = `${result.hostname}:${result.isp_name}:self-check`;
+            return d1Stmt.bind(
+                resultId,
+                result.hostname,
+                result.isp_name,
+                result.status,
+                result.ip || null,
+                result.latency || null,
+                'self-check-worker',
+                JSON.stringify({ source: 'workers-self-check', dnsResolverServiceUrl }),
+                result.timestamp,
+                'workers-self-check'
+            );
+        });
+
+        await env.DB.batch(d1Batch);
+        console.log(`🔍 [SelfCheck] Saved ${results.length} results to D1`);
+
+        // Clear trigger flag since we've done the check
+        const triggerKey = 'trigger:check';
+        try {
+            await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(triggerKey).run();
+            console.log('🔍 [SelfCheck] Trigger check cleared from D1');
+        } catch (error) {
+            console.warn('🔍 [SelfCheck] Error clearing trigger:', error);
+        }
+
+        // Check and send alerts
+        console.log('🔍 [SelfCheck] Checking for alerts...');
+        await checkAndSendAlerts(env);
+
+        console.log('🔍 [SelfCheck] Self-check completed successfully');
+    } catch (error) {
+        console.error('🔍 [SelfCheck] Error in performSelfCheck:', error);
     }
 }
 
