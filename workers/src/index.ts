@@ -2161,6 +2161,13 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
         const telegramBotToken = settings.telegramBotToken || '';
         const defaultTelegramChatId = settings.telegramChatId || '';
 
+        console.log('🔔 [Alert] Settings check:', {
+            hasBotToken: !!telegramBotToken,
+            hasChatId: !!defaultTelegramChatId,
+            botTokenLength: telegramBotToken.length,
+            chatIdLength: defaultTelegramChatId.length
+        });
+
         if (!telegramBotToken) {
             console.log('🔔 [Alert] No Telegram bot token configured, skipping alerts');
             return;
@@ -2196,7 +2203,10 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
 
             const resultsData = await resultsQuery.all();
 
+            console.log(`🔔 [Alert] Domain ${hostname}: Found ${resultsData.results?.length || 0} results in D1`);
+
             if (!resultsData.results || resultsData.results.length === 0) {
+                console.log(`🔔 [Alert] Domain ${hostname}: No results in D1, skipping`);
                 continue; // No results for this domain yet
             }
 
@@ -2247,9 +2257,11 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
 
             // If no chat IDs, skip
             if (chatIdsToSend.length === 0) {
-                console.log(`🔔 [Alert] No Telegram chat ID configured for ${hostname}, skipping`);
+                console.log(`🔔 [Alert] No Telegram chat ID configured for ${hostname} (domain chat: ${domainTelegramChatId || 'none'}, default chat: ${defaultTelegramChatId || 'none'}), skipping`);
                 continue;
             }
+
+            console.log(`🔔 [Alert] Sending alert for ${hostname} to ${chatIdsToSend.length} chat(s):`, chatIdsToSend);
 
             // Send alerts to all chat IDs
             const sendPromises = chatIdsToSend.map(chatId =>
