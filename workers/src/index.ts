@@ -2331,23 +2331,29 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
         const now = Date.now();
         
         // จัดกลุ่มโดเมนตาม chat ID ที่จะส่ง
-        // 1. โดเมนที่มี custom chat ID → ส่งไปห้องนั้น
-        // 2. โดเมนที่ไม่มี custom chat ID → ส่งไป default chat (ถ้ามี)
+        // 1. โดเมนที่มี custom chat ID → ส่งไปห้องนั้น (เฉพาะโดเมนนั้น) และส่งไป default chat (สรุปทั้งหมด)
+        // 2. โดเมนที่ไม่มี custom chat ID → ส่งไป default chat เท่านั้น
+        // 3. default chat จะได้รับทุกโดเมน (สรุปทั้งหมด)
         const domainsByChatId = new Map<string, Array<{
             hostname: string;
             domainTelegramChatId: string | null;
             resultsByISP: Record<string, { status: string }>;
         }>>();
 
-        // จัดกลุ่มโดเมนตาม chat ID
+        // เพิ่มทุกโดเมนไป default chat (สรุปทั้งหมด)
+        if (defaultTelegramChatId) {
+            domainsByChatId.set(defaultTelegramChatId, [...allDomains]);
+            console.log(`🔔 [Alert] Added ${allDomains.length} domains to default chat (${defaultTelegramChatId}) for summary`);
+        }
+
+        // เพิ่มโดเมนที่มี custom chat ID ไปห้องนั้น (เฉพาะโดเมนนั้น)
         for (const domain of allDomains) {
-            const chatIdToUse = domain.domainTelegramChatId || defaultTelegramChatId;
-            
-            if (chatIdToUse) {
-                if (!domainsByChatId.has(chatIdToUse)) {
-                    domainsByChatId.set(chatIdToUse, []);
+            if (domain.domainTelegramChatId) {
+                if (!domainsByChatId.has(domain.domainTelegramChatId)) {
+                    domainsByChatId.set(domain.domainTelegramChatId, []);
                 }
-                domainsByChatId.get(chatIdToUse)!.push(domain);
+                domainsByChatId.get(domain.domainTelegramChatId)!.push(domain);
+                console.log(`🔔 [Alert] Added domain ${domain.hostname} to custom chat (${domain.domainTelegramChatId})`);
             }
         }
 
