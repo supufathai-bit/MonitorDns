@@ -2036,7 +2036,88 @@ async function handleSaveFrontendSettings(
     }
 }
 
-// Send Telegram alert
+// Send Telegram alert table (รวมทุกโดเมน)
+async function sendTelegramAlertTable(
+    botToken: string,
+    chatId: string,
+    blockedDomains: Array<{
+        hostname: string;
+        domainTelegramChatId: string | null;
+        resultsByISP: Record<string, { status: string }>;
+    }>
+): Promise<boolean> {
+    if (!botToken || !chatId || blockedDomains.length === 0) return false;
+
+    // Helper function to find ISP status
+    const findISPStatus = (results: Record<string, { status: string }>, keys: string[]): string | null => {
+        for (const key of keys) {
+            if (results[key]) {
+                return results[key].status;
+            }
+            const matchedKey = Object.keys(results).find(k => k.toLowerCase() === key.toLowerCase());
+            if (matchedKey) {
+                return results[matchedKey].status;
+            }
+        }
+        return null;
+    };
+
+    // Helper function to get status emoji
+    const getStatusEmoji = (status: string | null): string => {
+        if (!status) return '⏳';
+        if (status === 'BLOCKED') return '🚫';
+        if (status === 'ACTIVE') return '✅';
+        return '❓';
+    };
+
+    // สร้างตาราง
+    let table = '<code>\n';
+    table += 'Domain'.padEnd(20) + ' | A  | T  | D\n';
+    table += '-'.repeat(20) + '-|-'.repeat(3) + '\n';
+
+    for (const domain of blockedDomains) {
+        const aisStatus = findISPStatus(domain.resultsByISP, ['AIS', 'ais']);
+        const dtacStatus = findISPStatus(domain.resultsByISP, ['DTAC', 'dtac']);
+
+        const aisEmoji = getStatusEmoji(aisStatus);
+        const trueEmoji = getStatusEmoji(dtacStatus);
+        const dtacEmoji = getStatusEmoji(dtacStatus);
+
+        // จำกัดความยาว hostname ให้ไม่เกิน 20 ตัวอักษร
+        const displayHostname = domain.hostname.length > 20 
+            ? domain.hostname.substring(0, 17) + '...' 
+            : domain.hostname;
+
+        table += displayHostname.padEnd(20) + ` | ${aisEmoji} | ${trueEmoji} | ${dtacEmoji}\n`;
+    }
+
+    table += '</code>';
+
+    const message = `🚨 <b>DOMAIN ALERT</b> 🚨\n\n${table}\n\n<i>Please check the dashboard for more details.</i>`;
+
+    try {
+        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                chat_id: chatId,
+                text: message,
+                parse_mode: 'HTML',
+            }),
+        });
+
+        const data = await response.json();
+        return data.ok;
+    } catch (error) {
+        console.error('Failed to send Telegram alert table', error);
+        return false;
+    }
+}
+
+// Send Telegram alert (single domain - kept for backward compatibility)
 async function sendTelegramAlert(
     botToken: string,
     chatId: string,
@@ -2144,12 +2225,17 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
 
         const telegramBotToken = settings.telegramBotToken || '';
         const defaultTelegramChatId = settings.telegramChatId || '';
+        // ใช้ checkInterval จาก settings เป็น alert interval (หน่วย: นาที)
+        // ถ้าไม่มีการตั้งค่า ให้ใช้ default 360 นาที (6 ชั่วโมง)
+        const alertInterval = settings.alertInterval || settings.checkInterval || 360;
+        const alertIntervalMs = alertInterval * 60 * 1000; // แปลงเป็น milliseconds
 
         console.log('🔔 [Alert] Settings check:', {
             hasBotToken: !!telegramBotToken,
             hasChatId: !!defaultTelegramChatId,
             botTokenLength: telegramBotToken.length,
-            chatIdLength: defaultTelegramChatId.length
+            chatIdLength: defaultTelegramChatId.length,
+            alertIntervalMinutes: alertInterval
         });
 
         if (!telegramBotToken) {
@@ -2166,6 +2252,13 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
             console.log('🔔 [Alert] No domains to monitor');
             return;
         }
+
+        // รวบรวมข้อมูลโดเมนที่ถูกบล็อกทั้งหมด
+        const blockedDomains: Array<{
+            hostname: string;
+            domainTelegramChatId: string | null;
+            resultsByISP: Record<string, { status: string }>;
+        }> = [];
 
         // For each domain, get latest results and check for blocked ISPs
         for (const domainRow of domainsResult.results) {
@@ -2221,49 +2314,99 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
 
             console.log(`🔔 [Alert] Domain ${hostname} results:`, JSON.stringify(resultsByISP));
 
-            // Only send alert if there are blocked ISPs
-            if (!hasBlocked) {
-                continue;
+            // Only add to blocked domains list if there are blocked ISPs
+            if (hasBlocked) {
+                blockedDomains.push({
+                    hostname,
+                    domainTelegramChatId,
+                    resultsByISP
+                });
+            }
+        }
+
+        // ถ้าไม่มีโดเมนที่ถูกบล็อก ไม่ต้องส่งแจ้งเตือน
+        if (blockedDomains.length === 0) {
+            console.log('🔔 [Alert] No blocked domains found');
+            return;
+        }
+
+        // ตรวจสอบว่าเวลาผ่านไปตาม interval แล้วหรือยัง (ตรวจสอบครั้งเดียวสำหรับทุกโดเมน)
+        const now = Date.now();
+        
+        // กำหนด chat IDs ที่จะส่ง (รวม default และ domain-specific)
+        const allChatIds = new Set<string>();
+        if (defaultTelegramChatId) {
+            allChatIds.add(defaultTelegramChatId);
+        }
+        blockedDomains.forEach(domain => {
+            if (domain.domainTelegramChatId) {
+                allChatIds.add(domain.domainTelegramChatId);
+            }
+        });
+
+        if (allChatIds.size === 0) {
+            console.log('🔔 [Alert] No Telegram chat IDs configured, skipping alerts');
+            return;
+        }
+
+        // ส่งตารางรวมทุกโดเมนให้แต่ละ chat ID
+        const sendPromises: Promise<boolean>[] = [];
+
+        for (const chatId of allChatIds) {
+            // ตรวจสอบ last alert sent timestamp (ใช้ key ร่วมกันสำหรับทุกโดเมน)
+            const lastAlertKey = `last_alert:all_domains:${chatId}`;
+            const lastAlertResult = await env.DB.prepare(
+                "SELECT value, updated_at FROM settings WHERE key = ?"
+            ).bind(lastAlertKey).first();
+
+            let shouldSend = true;
+            if (lastAlertResult) {
+                try {
+                    const lastAlertData = JSON.parse(lastAlertResult.value as string);
+                    const lastAlertTime = lastAlertData.timestamp || lastAlertResult.updated_at;
+                    const timeSinceLastAlert = now - lastAlertTime;
+
+                    if (timeSinceLastAlert < alertIntervalMs) {
+                        const minutesRemaining = Math.ceil((alertIntervalMs - timeSinceLastAlert) / 1000 / 60);
+                        console.log(`🔔 [Alert] Skipping alert to ${chatId} - last sent ${Math.floor(timeSinceLastAlert / 1000 / 60)} minutes ago (wait ${minutesRemaining} more minutes)`);
+                        shouldSend = false;
+                    }
+                } catch (error) {
+                    console.warn(`🔔 [Alert] Error parsing last alert data for ${chatId}:`, error);
+                    // ถ้า parse ไม่ได้ ให้ส่งเลย (safety)
+                }
             }
 
-            // Determine which chat IDs to send to
-            const chatIdsToSend: string[] = [];
-
-            // Add domain's custom chat ID if available
-            if (domainTelegramChatId) {
-                chatIdsToSend.push(domainTelegramChatId);
+            if (shouldSend) {
+                console.log(`🔔 [Alert] Sending combined alert table to ${chatId} (${blockedDomains.length} blocked domains)`);
+                sendPromises.push(
+                    sendTelegramAlertTable(telegramBotToken, chatId, blockedDomains)
+                        .then(async (sent) => {
+                            if (sent) {
+                                console.log(`🔔 [Alert] Telegram alert table sent to ${chatId}`);
+                                // บันทึก timestamp ของการส่งแจ้งเตือน
+                                const alertData = { timestamp: now, chatId, domainCount: blockedDomains.length };
+                                await env.DB.prepare(
+                                    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+                                ).bind(
+                                    lastAlertKey,
+                                    JSON.stringify(alertData),
+                                    now
+                                ).run();
+                            } else {
+                                console.error(`🔔 [Alert] Failed to send Telegram alert table to ${chatId}`);
+                            }
+                            return sent;
+                        })
+                        .catch(error => {
+                            console.error(`🔔 [Alert] Error sending Telegram alert table to ${chatId}:`, error);
+                            return false;
+                        })
+                );
             }
+        }
 
-            // Add default chat ID if available and different from domain chat ID
-            if (defaultTelegramChatId && defaultTelegramChatId !== domainTelegramChatId) {
-                chatIdsToSend.push(defaultTelegramChatId);
-            }
-
-            // If no chat IDs, skip
-            if (chatIdsToSend.length === 0) {
-                console.log(`🔔 [Alert] No Telegram chat ID configured for ${hostname} (domain chat: ${domainTelegramChatId || 'none'}, default chat: ${defaultTelegramChatId || 'none'}), skipping`);
-                continue;
-            }
-
-            console.log(`🔔 [Alert] Sending alert for ${hostname} to ${chatIdsToSend.length} chat(s):`, chatIdsToSend);
-
-            // Send alerts to all chat IDs
-            const sendPromises = chatIdsToSend.map(chatId =>
-                sendTelegramAlert(telegramBotToken, chatId, hostname, resultsByISP)
-                    .then(sent => {
-                        if (sent) {
-                            console.log(`🔔 [Alert] Telegram alert sent for ${hostname} to ${chatId}`);
-                        } else {
-                            console.error(`🔔 [Alert] Failed to send Telegram alert for ${hostname} to ${chatId}`);
-                        }
-                        return sent;
-                    })
-                    .catch(error => {
-                        console.error(`🔔 [Alert] Error sending Telegram alert for ${hostname} to ${chatId}:`, error);
-                        return false;
-                    })
-            );
-
+        if (sendPromises.length > 0) {
             await Promise.all(sendPromises);
         }
 
