@@ -482,10 +482,9 @@ async function handleMobileSync(
             // Continue - don't throw error since D1 save succeeded
         }
 
-        // Check and send alerts for blocked domains (async, don't wait)
-        checkAndSendAlerts(env).catch(error => {
-            console.error('🔔 [Alert] Error in background alert check:', error);
-        });
+        // Don't send alerts here - let Cron job handle it based on interval
+        // This prevents duplicate alerts when mobile app syncs results
+        // Cron job runs every 10 minutes and checks interval before sending
 
         return jsonResponse({
             success: true,
