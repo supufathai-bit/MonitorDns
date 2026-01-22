@@ -2235,7 +2235,10 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
             hasChatId: !!defaultTelegramChatId,
             botTokenLength: telegramBotToken.length,
             chatIdLength: defaultTelegramChatId.length,
-            alertIntervalMinutes: alertInterval
+            alertIntervalMinutes: alertInterval,
+            alertIntervalMs: alertIntervalMs,
+            checkInterval: settings.checkInterval,
+            alertIntervalSetting: settings.alertInterval
         });
 
         if (!telegramBotToken) {
@@ -2360,21 +2363,40 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
             ).bind(lastAlertKey).first();
 
             let shouldSend = true;
+            let skipReason = '';
+
             if (lastAlertResult) {
                 try {
                     const lastAlertData = JSON.parse(lastAlertResult.value as string);
                     const lastAlertTime = lastAlertData.timestamp || lastAlertResult.updated_at;
                     const timeSinceLastAlert = now - lastAlertTime;
+                    const minutesSinceLastAlert = Math.floor(timeSinceLastAlert / 1000 / 60);
+                    const minutesRemaining = Math.ceil((alertIntervalMs - timeSinceLastAlert) / 1000 / 60);
+
+                    console.log(`🔔 [Alert] Checking interval for ${chatId}:`, {
+                        lastAlertTime: new Date(lastAlertTime).toISOString(),
+                        now: new Date(now).toISOString(),
+                        timeSinceLastAlert: timeSinceLastAlert,
+                        minutesSinceLastAlert: minutesSinceLastAlert,
+                        alertIntervalMs: alertIntervalMs,
+                        alertIntervalMinutes: alertInterval,
+                        minutesRemaining: minutesRemaining
+                    });
 
                     if (timeSinceLastAlert < alertIntervalMs) {
-                        const minutesRemaining = Math.ceil((alertIntervalMs - timeSinceLastAlert) / 1000 / 60);
-                        console.log(`🔔 [Alert] Skipping alert to ${chatId} - last sent ${Math.floor(timeSinceLastAlert / 1000 / 60)} minutes ago (wait ${minutesRemaining} more minutes)`);
+                        skipReason = `last sent ${minutesSinceLastAlert} minutes ago (wait ${minutesRemaining} more minutes, interval: ${alertInterval} minutes)`;
+                        console.log(`🔔 [Alert] ⏸️ SKIPPING alert to ${chatId} - ${skipReason}`);
                         shouldSend = false;
+                    } else {
+                        console.log(`🔔 [Alert] ✅ Interval passed for ${chatId} - ${minutesSinceLastAlert} minutes since last alert (interval: ${alertInterval} minutes)`);
                     }
                 } catch (error) {
                     console.warn(`🔔 [Alert] Error parsing last alert data for ${chatId}:`, error);
+                    console.log(`🔔 [Alert] ⚠️ Will send alert anyway (parse error)`);
                     // ถ้า parse ไม่ได้ ให้ส่งเลย (safety)
                 }
+            } else {
+                console.log(`🔔 [Alert] ✅ No previous alert found for ${chatId} - will send first alert`);
             }
 
             if (shouldSend) {
