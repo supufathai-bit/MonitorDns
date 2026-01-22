@@ -2406,34 +2406,43 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
                 }
             } else {
                 console.log(`🔔 [Alert] ✅ No previous alert found for ${chatId} - will send first alert`);
+                // First alert - send immediately
+                shouldSend = true;
             }
 
             if (shouldSend) {
-                console.log(`🔔 [Alert] Sending alert table to ${chatId} (${domainsForThisChat.length} domains)`);
+                console.log(`🔔 [Alert] 📤 SENDING alert table to ${chatId} (${domainsForThisChat.length} domains, interval: ${alertInterval} minutes)`);
                 sendPromises.push(
                     sendTelegramAlertTable(telegramBotToken, chatId, domainsForThisChat)
                         .then(async (sent) => {
                             if (sent) {
-                                console.log(`🔔 [Alert] Telegram alert table sent to ${chatId}`);
+                                console.log(`🔔 [Alert] ✅ Telegram alert table sent successfully to ${chatId}`);
                                 // บันทึก timestamp ของการส่งแจ้งเตือน
                                 const alertData = { timestamp: now, chatId, domainCount: domainsForThisChat.length };
-                                await env.DB.prepare(
-                                    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
-                                ).bind(
-                                    lastAlertKey,
-                                    JSON.stringify(alertData),
-                                    now
-                                ).run();
+                                try {
+                                    await env.DB.prepare(
+                                        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)"
+                                    ).bind(
+                                        lastAlertKey,
+                                        JSON.stringify(alertData),
+                                        now
+                                    ).run();
+                                    console.log(`🔔 [Alert] ✅ Saved last alert timestamp for ${chatId}: ${new Date(now).toISOString()}`);
+                                } catch (saveError) {
+                                    console.error(`🔔 [Alert] ❌ Failed to save last alert timestamp for ${chatId}:`, saveError);
+                                }
                             } else {
-                                console.error(`🔔 [Alert] Failed to send Telegram alert table to ${chatId}`);
+                                console.error(`🔔 [Alert] ❌ Failed to send Telegram alert table to ${chatId}`);
                             }
                             return sent;
                         })
                         .catch(error => {
-                            console.error(`🔔 [Alert] Error sending Telegram alert table to ${chatId}:`, error);
+                            console.error(`🔔 [Alert] ❌ Error sending Telegram alert table to ${chatId}:`, error);
                             return false;
                         })
                 );
+            } else {
+                console.log(`🔔 [Alert] ⏸️ SKIPPED sending to ${chatId} - ${skipReason || 'interval not passed'}`);
             }
         }
 
