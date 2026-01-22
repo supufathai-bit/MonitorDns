@@ -2072,45 +2072,29 @@ async function sendTelegramAlert(
     // หา status ของ DTAC (ใช้สำหรับทั้ง True และ DTAC เพราะเป็นค่ายเดียวกัน)
     const dtacStatus = findISPStatus(['DTAC', 'dtac']);
     
-    // สร้างรายการ ISP ที่มีข้อมูล
-    const ispStatusList: string[] = [];
-    
-    // AIS
-    if (aisStatus) {
-        if (aisStatus === 'BLOCKED') {
-            ispStatusList.push(`🚫 AIS`);
-        } else if (aisStatus === 'ACTIVE') {
-            ispStatusList.push(`✅ AIS`);
-        }
-    }
-    
-    // True - ใช้ข้อมูลจาก DTAC (เพราะเป็นค่ายเดียวกัน)
-    if (dtacStatus) {
-        if (dtacStatus === 'BLOCKED') {
-            ispStatusList.push(`🚫 True`);
-        } else if (dtacStatus === 'ACTIVE') {
-            ispStatusList.push(`✅ True`);
-        }
-    }
-    
-    // DTAC
-    if (dtacStatus) {
-        if (dtacStatus === 'BLOCKED') {
-            ispStatusList.push(`🚫 DTAC`);
-        } else if (dtacStatus === 'ACTIVE') {
-            ispStatusList.push(`✅ DTAC`);
-        }
-    }
-    
-    const ispStatusListString = ispStatusList.join('\n');
+    // สร้างตารางสำหรับแสดงผล
+    const getStatusDisplay = (status: string | null): string => {
+        if (!status) return '⏳ PENDING';
+        if (status === 'BLOCKED') return '🚫 BLOCKED';
+        if (status === 'ACTIVE') return '✅ ACTIVE';
+        return '❓ ' + status;
+    };
 
+    // สร้างตารางแบบ monospace (ใช้ <code> tag)
     const message = `
 🚨 <b>DOMAIN ALERT</b> 🚨
 
-<b>Domain:</b> ${hostname}
-<b>Status:</b> BLOCKED / UNREACHABLE
-<b>Detected on:</b>
-${ispStatusListString}
+<b>Domain:</b> <code>${hostname}</code>
+
+<code>
+┌──────────┬──────────────────┐
+│ ISP      │ Status           │
+├──────────┼──────────────────┤
+│ AIS      │ ${getStatusDisplay(aisStatus).padEnd(16)} │
+│ True     │ ${getStatusDisplay(dtacStatus).padEnd(16)} │
+│ DTAC     │ ${getStatusDisplay(dtacStatus).padEnd(16)} │
+└──────────┴──────────────────┘
+</code>
 
 <i>Please check the dashboard for more details.</i>
 `;
