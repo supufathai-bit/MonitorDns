@@ -22,9 +22,22 @@ export const sendTelegramAlertTable = async (
   table += '---------------------+-----+-----+-----\n';
 
   for (const domain of domains) {
+    // Get AIS status
     const aisStatus = domain.results[ISP.AIS]?.status;
-    const trueStatus = domain.results[ISP.TRUE]?.status || domain.results[ISP.DTAC]?.status;
-    const dtacStatus = domain.results[ISP.DTAC]?.status || domain.results[ISP.TRUE]?.status;
+    
+    // Get True/DTAC status - check both enum keys and string keys
+    // True and DTAC share the same network (True Corporation), so use the same result
+    const trueOrDTACResult = domain.results[ISP.TRUE] || domain.results[ISP.DTAC] || 
+                              domain.results['True' as any] || domain.results['DTAC' as any];
+    const trueStatus = trueOrDTACResult?.status;
+    const dtacStatus = trueOrDTACResult?.status; // Same as True (shared network)
+    
+    // Debug logging
+    console.log(`📤 [Telegram Alert] Domain: ${domain.hostname}`);
+    console.log(`   AIS: ${aisStatus || 'undefined'} (${getStatusEmoji(aisStatus)})`);
+    console.log(`   True/DTAC result found:`, !!trueOrDTACResult);
+    console.log(`   True/DTAC status: ${trueStatus || 'undefined'} (${getStatusEmoji(trueStatus)})`);
+    console.log(`   Available keys in results:`, Object.keys(domain.results));
 
     const aisEmoji = getStatusEmoji(aisStatus);
     const trueEmoji = getStatusEmoji(trueStatus);
