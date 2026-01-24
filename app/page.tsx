@@ -1713,6 +1713,17 @@ export default function Home() {
                                             });
 
                                             console.log(`🔔 [Frontend Alert] Updated ${domainsForAlert.length} domains with latest results from D1`);
+                                            
+                                            // Debug: Log sample domain results to verify True/DTAC status
+                                            if (domainsForAlert.length > 0) {
+                                                const sampleDomain = domainsForAlert[0];
+                                                console.log(`🔔 [Frontend Alert] Sample domain ${sampleDomain.hostname} results:`, {
+                                                    AIS: sampleDomain.results[ISP.AIS]?.status || sampleDomain.results['AIS' as any]?.status,
+                                                    True: sampleDomain.results[ISP.TRUE]?.status || sampleDomain.results['True' as any]?.status,
+                                                    DTAC: sampleDomain.results[ISP.DTAC]?.status || sampleDomain.results['DTAC' as any]?.status,
+                                                    allKeys: Object.keys(sampleDomain.results)
+                                                });
+                                            }
                                         } else {
                                             console.log('🔔 [Frontend Alert] No results in D1, using current domains state');
                                         }
@@ -1732,13 +1743,15 @@ export default function Home() {
                                     if (currentSettings.telegramBotToken && currentSettings.telegramChatId && domainsForAlert.length > 0) {
                                         try {
                                             console.log(`🔔 [Frontend Alert] Sending alert table with ${domainsForAlert.length} domains`);
+                                            console.log(`🔔 [Frontend Alert] Using domainsForAlert (updated from D1) - NOT domainsRef.current`);
                                             addLog(`Sending Telegram alert table (${domainsForAlert.length} domains)...`, 'info');
 
                                             // Send combined table alert to default chat
+                                            // Use domainsForAlert which was updated from D1, not domainsRef.current
                                             const sent = await sendTelegramAlertTable(
                                                 currentSettings.telegramBotToken,
                                                 currentSettings.telegramChatId,
-                                                domainsForAlert
+                                                domainsForAlert  // This is the updated data from D1
                                             );
 
                                             if (sent) {
