@@ -9,19 +9,20 @@ export const sendTelegramAlert = async (
   if (!botToken || !chatId) return false;
 
   // แสดงเฉพาะ AIS, True, DTAC พร้อม emoji
-  // ใช้ key ตรงๆ เพื่อดึง result จาก domain.results (เช่น 'AIS', 'True', 'DTAC')
-  const ispDisplayOrder = ['AIS', 'True', 'DTAC'];
-
-  const ispStatusList = ispDisplayOrder.map(ispKey => {
-    const result = domain.results[ispKey as keyof typeof domain.results];
+  const ispStatusList = [
+    { isp: ISP.AIS, name: 'AIS' },
+    { isp: ISP.TRUE, name: 'True' },
+    { isp: ISP.DTAC, name: 'DTAC' },
+  ].map(({ isp, name }) => {
+    const result = domain.results[isp];
     const status = result?.status || Status.PENDING;
 
     if (status === Status.BLOCKED) {
-      return `🚫 ${ispKey}`;
+      return `🚫 ${name}`;
     } else if (status === Status.ACTIVE) {
-      return `✅ ${ispKey}`;
+      return `✅ ${name}`;
     } else {
-      return `⏳ ${ispKey}`;
+      return `⏳ ${name}`;
     }
   }).join('\n');
 

@@ -659,7 +659,7 @@ async function handleUpdateDomains(
         // Normalize both lists for comparison (lowercase, no www prefix)
         const normalizeHostname = (h: string) => h.toLowerCase().replace(/^www\./, '');
         const normalizedNew = uniqueHostnames.map(normalizeHostname);
-        
+
         const domainsToDelete = existingDomains.filter(existing => {
             const normalizedExisting = normalizeHostname(existing);
             return !normalizedNew.includes(normalizedExisting);
@@ -667,30 +667,30 @@ async function handleUpdateDomains(
 
         if (domainsToDelete.length > 0) {
             console.log(`Deleting ${domainsToDelete.length} old domains:`, domainsToDelete);
-            
+
             // Delete domains and their related results
             // For each hostname to delete, we need to find all variations (with/without www, case variations)
             // First, get all actual hostnames from D1 that match the normalized versions
             const deleteDomainBatch: any[] = [];
             const deleteResultsBatch: any[] = [];
-            
+
             for (const hostnameToDelete of domainsToDelete) {
                 const normalized = normalizeHostname(hostnameToDelete);
-                
+
                 // Find all hostnames in D1 that normalize to the same value
                 // Get all domains and filter in JavaScript (more reliable than SQL REPLACE)
                 const allDomains = await env.DB.prepare("SELECT hostname FROM domains").all();
                 const matchingHostnames = (allDomains.results as any[])
                     .map(row => row.hostname)
                     .filter(h => normalizeHostname(h) === normalized);
-                
+
                 // Delete each matching domain and its results
                 for (const actualHostname of matchingHostnames) {
                     deleteDomainBatch.push(env.DB.prepare("DELETE FROM domains WHERE hostname = ?").bind(actualHostname));
                     deleteResultsBatch.push(env.DB.prepare("DELETE FROM results WHERE hostname = ?").bind(actualHostname));
                 }
             }
-            
+
             if (deleteDomainBatch.length > 0) {
                 await env.DB.batch(deleteDomainBatch);
                 await env.DB.batch(deleteResultsBatch);
@@ -1766,7 +1766,7 @@ async function handleSaveFrontendDomains(
         // Normalize both lists for comparison (lowercase, no www prefix)
         const normalizeHostname = (h: string) => h.toLowerCase().replace(/^www\./, '');
         const normalizedNew = uniqueHostnames.map(normalizeHostname);
-        
+
         const domainsToDelete = existingDomains.filter(existing => {
             const normalizedExisting = normalizeHostname(existing);
             return !normalizedNew.includes(normalizedExisting);
@@ -1774,29 +1774,29 @@ async function handleSaveFrontendDomains(
 
         if (domainsToDelete.length > 0) {
             console.log(`[handleSaveFrontendDomains] Deleting ${domainsToDelete.length} old domains:`, domainsToDelete);
-            
+
             // Delete domains and their related results
             // For each hostname to delete, find all variations (with/without www, case variations)
             const deleteDomainBatch: any[] = [];
             const deleteResultsBatch: any[] = [];
-            
+
             for (const hostnameToDelete of domainsToDelete) {
                 const normalized = normalizeHostname(hostnameToDelete);
-                
+
                 // Find all hostnames in D1 that normalize to the same value
                 // Get all domains and filter in JavaScript (more reliable than SQL REPLACE)
                 const allDomains = await env.DB.prepare("SELECT hostname FROM domains").all();
                 const matchingHostnames = (allDomains.results as any[])
                     .map(row => row.hostname)
                     .filter(h => normalizeHostname(h) === normalized);
-                
+
                 // Delete each matching domain and its results
                 for (const actualHostname of matchingHostnames) {
                     deleteDomainBatch.push(env.DB.prepare("DELETE FROM domains WHERE hostname = ?").bind(actualHostname));
                     deleteResultsBatch.push(env.DB.prepare("DELETE FROM results WHERE hostname = ?").bind(actualHostname));
                 }
             }
-            
+
             if (deleteDomainBatch.length > 0) {
                 await env.DB.batch(deleteDomainBatch);
                 await env.DB.batch(deleteResultsBatch);
@@ -2062,18 +2062,18 @@ async function sendTelegramAlertTable(
         return null;
     };
 
-    // Helper function to get status emoji
+    // Helper function to get status emoji (✅ = ACTIVE, ⛔ = BLOCKED)
     const getStatusEmoji = (status: string | null): string => {
         if (!status) return '⏳';
-        if (status === 'BLOCKED') return '🚫';
+        if (status === 'BLOCKED') return '⛔';
         if (status === 'ACTIVE') return '✅';
         return '❓';
     };
 
-    // สร้างตาราง
-    let table = '<code>\n';
-    table += 'Domain'.padEnd(20) + ' | A  | T  | D\n';
-    table += '-'.repeat(20) + '-|-'.repeat(3) + '\n';
+    // สร้างตารางแบบ monospace ใน pre block (มี copy button ใน Telegram)
+    let table = '<pre>\n';
+    table += 'Domain               | A   | T   | D\n';
+    table += '---------------------+-----+-----+-----\n';
 
     for (const domain of blockedDomains) {
         const aisStatus = findISPStatus(domain.resultsByISP, ['AIS', 'ais']);
@@ -2083,17 +2083,17 @@ async function sendTelegramAlertTable(
         const trueEmoji = getStatusEmoji(dtacStatus);
         const dtacEmoji = getStatusEmoji(dtacStatus);
 
-        // จำกัดความยาว hostname ให้ไม่เกิน 20 ตัวอักษร
-        const displayHostname = domain.hostname.length > 20 
-            ? domain.hostname.substring(0, 17) + '...' 
+        // จำกัดความยาว hostname ให้ไม่เกิน 21 ตัวอักษร
+        const displayHostname = domain.hostname.length > 21
+            ? domain.hostname.substring(0, 18) + '...'
             : domain.hostname;
 
-        table += displayHostname.padEnd(20) + ` | ${aisEmoji} | ${trueEmoji} | ${dtacEmoji}\n`;
+        table += displayHostname.padEnd(21) + `| ${aisEmoji}  | ${trueEmoji}  | ${dtacEmoji}\n`;
     }
 
-    table += '</code>';
+    table += '</pre>';
 
-    const message = `🚨 <b>DOMAIN ALERT</b> 🚨\n\n${table}\n\n<i>Please check the dashboard for more details.</i>`;
+    const message = `🚨 <b>สถานะเว็บไซต์</b>\n\n${table}\n\n<i>A = AIS, T = True, D = DTAC</i>`;
 
     try {
         const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
@@ -2130,7 +2130,7 @@ async function sendTelegramAlert(
     // Note: True และ DTAC เป็นค่ายเดียวกัน (True Corporation) → ใช้ข้อมูลเดียวกัน
     const availableKeys = Object.keys(results);
     console.log(`🔔 [Alert] Available ISP keys in results for ${hostname}:`, availableKeys);
-    
+
     // หา status ของแต่ละ ISP (case-insensitive)
     const findISPStatus = (keys: string[]): string | null => {
         for (const key of keys) {
@@ -2146,13 +2146,13 @@ async function sendTelegramAlert(
         }
         return null;
     };
-    
+
     // หา status ของ AIS
     const aisStatus = findISPStatus(['AIS', 'ais']);
-    
+
     // หา status ของ DTAC (ใช้สำหรับทั้ง True และ DTAC เพราะเป็นค่ายเดียวกัน)
     const dtacStatus = findISPStatus(['DTAC', 'dtac']);
-    
+
     // สร้างตารางสำหรับแสดงผล
     const getStatusDisplay = (status: string | null): string => {
         if (!status) return '⏳ PENDING';
@@ -2328,7 +2328,7 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
 
         // ตรวจสอบว่าเวลาผ่านไปตาม interval แล้วหรือยัง
         const now = Date.now();
-        
+
         // จัดกลุ่มโดเมนตาม chat ID ที่จะส่ง
         // 1. โดเมนที่มี custom chat ID → ส่งไปห้องนั้น (เฉพาะโดเมนนั้น) และส่งไป default chat (สรุปทั้งหมด)
         // 2. โดเมนที่ไม่มี custom chat ID → ส่งไป default chat เท่านั้น

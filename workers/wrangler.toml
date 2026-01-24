@@ -1,4 +1,4 @@
-name = "monitordnswoker"
+name = "sentinel-dns-api"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
@@ -19,4 +19,4 @@ database_id = "1a3833e0-a84f-45c8-b933-95e467f6c57f"
 
 # Cron Trigger - Runs every 10 minutes to check if it's time to scan
 [triggers]
-crons = ["* * * * *"]  # Every 1 minute - check if it's time to scan
+crons = ["*/10 * * * *"]  # Every 10 minutes

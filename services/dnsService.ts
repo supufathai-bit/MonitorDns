@@ -1,22 +1,23 @@
 import { ISP, Status, ISPResult } from '../types';
 import { ISP_DNS_SERVERS } from '../constants';
 
-// Helper to extract hostname (keep www. prefix - treat www.domain.com and domain.com as separate)
+// Helper to extract hostname and normalize it (remove www, lowercase)
 export const getHostname = (url: string): string => {
   try {
     const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-    // Keep www. prefix - only lowercase, don't strip www
-    return urlObj.hostname.toLowerCase();
+    const hostname = urlObj.hostname;
+    // Normalize: remove www prefix and convert to lowercase
+    return hostname.toLowerCase().replace(/^www\./, '');
   } catch (e) {
     // If URL parsing fails, try to normalize the input directly
-    return url.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    return url.toLowerCase().replace(/^www\./, '').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   }
 };
 
 // Check via API (Cloudflare Workers or local)
 const checkViaBackend = async (
-  isp: ISP,
-  hostname: string,
+  isp: ISP, 
+  hostname: string, 
   backendUrl: string
 ): Promise<ISPResult> => {
   try {
@@ -25,52 +26,52 @@ const checkViaBackend = async (
     const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL;
     const baseUrl = workersUrl || backendUrl || '';
     const apiUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/api/check` : '/api/check';
-
+    
     // For Cloudflare Pages (static export), API routes don't work
     // Must use Workers API or external backend
     const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        hostname: hostname,
-        isp_name: isp
-      })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            hostname: hostname,
+            isp_name: isp
+        })
     });
 
     if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
+        throw new Error(`API returned ${response.status}`);
     }
 
     const data = await response.json();
     const endTime = performance.now();
 
     return {
-      isp,
-      status: data.status as Status,
-      ip: data.ip,
-      latency: data.latency || Math.round(endTime - startTime),
-      details: data.details || data.note || 'DNS Check'
+        isp,
+        status: data.status as Status,
+        ip: data.ip,
+        latency: data.latency || Math.round(endTime - startTime),
+        details: data.details || data.note || 'DNS Check'
     };
 
   } catch (error) {
     console.error(`Error checking ${isp}:`, error);
     return {
-      isp,
-      status: Status.ERROR,
-      details: 'API Error'
+        isp,
+        status: Status.ERROR,
+        details: 'API Error'
     };
   }
 };
 
 export const checkDomainHealth = async (
-  hostname: string,
+  hostname: string, 
   backendUrl: string = ''
 ): Promise<Record<ISP, ISPResult>> => {
-
+  
   // We trigger all checks against the Edge API. 
   // The API handles the actual resolution.
   const checkPromises = Object.keys(ISP_DNS_SERVERS).map((key) => {
-    return checkViaBackend(key as ISP, hostname, backendUrl);
+     return checkViaBackend(key as ISP, hostname, backendUrl);
   });
 
   const resultsArray = await Promise.all(checkPromises);
@@ -78,13 +79,13 @@ export const checkDomainHealth = async (
   // Construct the result object
   const results: Record<string, ISPResult> = {};
   resultsArray.forEach(res => {
-    results[res.isp] = res;
+      results[res.isp] = res;
   });
 
   return results as Record<ISP, ISPResult>;
 };
 
 export const generateDigCommand = (hostname: string, isp: ISP): string => {
-  const server = ISP_DNS_SERVERS[isp];
-  return `dig @${server} ${hostname} +short`;
+    const server = ISP_DNS_SERVERS[isp];
+    return `dig @${server} ${hostname} +short`;
 };
