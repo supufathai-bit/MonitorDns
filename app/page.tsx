@@ -1570,14 +1570,14 @@ export default function Home() {
                                     try {
                                         console.log('🔔 [Frontend Alert] Fetching latest results from D1 before sending alert...');
                                         const d1Response = await fetchResultsFromWorkers(workersUrl);
-                                        
+
                                         if (d1Response.success && d1Response.results.length > 0) {
                                             console.log(`🔔 [Frontend Alert] Loaded ${d1Response.results.length} results from D1`);
-                                            
+
                                             // Debug: Log ISP names in D1 results
                                             const ispNamesInD1 = [...new Set(d1Response.results.map(r => r.isp_name))];
                                             console.log('🔔 [Frontend Alert] ISP names in D1:', ispNamesInD1);
-                                            
+
                                             // Debug: Count results by ISP
                                             const resultsByISP = new Map<string, number>();
                                             d1Response.results.forEach(r => {
@@ -1665,9 +1665,13 @@ export default function Home() {
                                                         ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
 
                                                     if (isTrueOrDTAC) {
+                                                        // True and DTAC share the same network (True Corporation)
+                                                        // Update both True and DTAC columns with the same result
                                                         const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
+                                                        console.log(`🔄 [Frontend Alert] Updating True/DTAC slots with result from ${ispName}: status=${workerResult.status}, ip=${workerResult.ip || 'none'}`);
                                                         slots.forEach(slotKey => {
                                                             if (updatedResults[slotKey]) {
+                                                                const oldStatus = updatedResults[slotKey].status;
                                                                 updatedResults[slotKey] = {
                                                                     isp: slotKey === 'True' ? ISP.TRUE : slotKey === 'DTAC' ? ISP.DTAC : slotKey,
                                                                     status: workerResult.status as Status,
@@ -1678,6 +1682,9 @@ export default function Home() {
                                                                     deviceId: workerResult.device_id,
                                                                     timestamp: workerResult.timestamp,
                                                                 };
+                                                                console.log(`✅ [Frontend Alert] Updated ${slotKey} slot: ${oldStatus} -> ${workerResult.status}`);
+                                                            } else {
+                                                                console.warn(`⚠️ [Frontend Alert] Slot ${slotKey} not found in domain results`);
                                                             }
                                                         });
                                                     } else {
