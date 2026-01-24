@@ -240,6 +240,11 @@ export default {
             return handleClearCustomChatIds(request, env, corsHeaders);
         }
 
+        // Admin endpoint: Clear all last alert timestamps (to send alerts immediately)
+        if (url.pathname === '/api/admin/clear-last-alert-timestamps' && request.method === 'POST') {
+            return handleClearLastAlertTimestamps(request, env, corsHeaders);
+        }
+
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
@@ -978,6 +983,37 @@ async function handleClearCustomChatIds(
         }, 200, corsHeaders);
     } catch (error: any) {
         console.error('Clear custom chat IDs error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Admin endpoint: Clear all last alert timestamps (to send alerts immediately)
+async function handleClearLastAlertTimestamps(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        console.log('🧹 Clearing all last alert timestamps...');
+
+        // Delete all last alert timestamps
+        const result = await env.DB.prepare(
+            "DELETE FROM settings WHERE key LIKE 'last_alert:chat:%'"
+        ).run();
+
+        console.log(`✅ Cleared last alert timestamps (affected: ${result.meta.changes || 0} rows)`);
+
+        return jsonResponse({
+            success: true,
+            message: `Cleared last alert timestamps. Alerts will be sent immediately on next Cron run.`,
+            affectedRows: result.meta.changes || 0,
+        }, 200, corsHeaders);
+    } catch (error: any) {
+        console.error('Clear last alert timestamps error:', error);
         return jsonResponse(
             { error: error.message || 'Internal server error' },
             500,
