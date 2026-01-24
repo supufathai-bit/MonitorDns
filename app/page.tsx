@@ -1566,8 +1566,19 @@ export default function Home() {
 
                                 // Send Telegram alert table (combined table for all domains) after scan completes
                                 const currentSettings = settingsRef.current;
+                                console.log('🔔 [Frontend Alert] Checking conditions:', {
+                                    hasBotToken: !!currentSettings.telegramBotToken,
+                                    hasChatId: !!currentSettings.telegramChatId,
+                                    domainsCount: updatedDomainsForAlert.length,
+                                    botTokenLength: currentSettings.telegramBotToken?.length || 0,
+                                    chatId: currentSettings.telegramChatId || 'N/A'
+                                });
+                                
                                 if (currentSettings.telegramBotToken && currentSettings.telegramChatId && updatedDomainsForAlert.length > 0) {
                                     try {
+                                        console.log(`🔔 [Frontend Alert] Sending alert table with ${updatedDomainsForAlert.length} domains`);
+                                        addLog(`Sending Telegram alert table (${updatedDomainsForAlert.length} domains)...`, 'info');
+                                        
                                         // Send combined table alert to default chat
                                         const sent = await sendTelegramAlertTable(
                                             currentSettings.telegramBotToken,
@@ -1576,14 +1587,24 @@ export default function Home() {
                                         );
 
                                         if (sent) {
+                                            console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully');
                                             addLog(`Telegram alert table sent (${updatedDomainsForAlert.length} domains)`, 'success');
                                         } else {
+                                            console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table (sent = false)');
                                             addLog('Failed to send Telegram alert table', 'error');
                                         }
                                     } catch (error) {
-                                        console.error('Error sending Telegram alert table:', error);
-                                        addLog('Error sending Telegram alert table', 'error');
+                                        console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
+                                        addLog(`Error sending Telegram alert table: ${error instanceof Error ? error.message : String(error)}`, 'error');
                                     }
+                                } else {
+                                    const missingItems = [];
+                                    if (!currentSettings.telegramBotToken) missingItems.push('Bot Token');
+                                    if (!currentSettings.telegramChatId) missingItems.push('Chat ID');
+                                    if (updatedDomainsForAlert.length === 0) missingItems.push('Domains (empty)');
+                                    
+                                    console.warn('🔔 [Frontend Alert] ⚠️ Skipping alert - missing:', missingItems.join(', '));
+                                    addLog(`Skipping Telegram alert - missing: ${missingItems.join(', ')}`, 'info');
                                 }
 
                                 // Update nextScanTime in D1 after scan completes (shared storage)
