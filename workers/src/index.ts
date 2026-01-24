@@ -245,6 +245,11 @@ export default {
             return handleClearLastAlertTimestamps(request, env, corsHeaders);
         }
 
+        // Admin endpoint: Force send alerts immediately (ignore interval)
+        if (url.pathname === '/api/admin/force-send-alerts' && request.method === 'POST') {
+            return handleForceSendAlerts(request, env, corsHeaders);
+        }
+
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
@@ -1014,6 +1019,37 @@ async function handleClearLastAlertTimestamps(
         }, 200, corsHeaders);
     } catch (error: any) {
         console.error('Clear last alert timestamps error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Admin endpoint: Force send alerts immediately (ignore interval)
+async function handleForceSendAlerts(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        console.log('🚀 Force sending alerts immediately (ignoring interval)...');
+
+        // Delete all last alert timestamps first
+        await env.DB.prepare(
+            "DELETE FROM settings WHERE key LIKE 'last_alert:chat:%'"
+        ).run();
+
+        // Then call checkAndSendAlerts (which will send immediately since no last alert timestamp)
+        await checkAndSendAlerts(env);
+
+        return jsonResponse({
+            success: true,
+            message: 'Alerts sent immediately (interval ignored)',
+        }, 200, corsHeaders);
+    } catch (error: any) {
+        console.error('Force send alerts error:', error);
         return jsonResponse(
             { error: error.message || 'Internal server error' },
             500,
