@@ -19,8 +19,8 @@ const generateId = () => {
 };
 
 const defaultSettings: AppSettings = {
-    telegramBotToken: '',
-    telegramChatId: '',
+  telegramBotToken: '',
+  telegramChatId: '',
     checkInterval: 360, // Default to 6 hours (4 scans per day: 0:00, 6:00, 12:00, 18:00)
     backendUrl: '',
     workersUrl: process.env.NEXT_PUBLIC_WORKERS_URL || ''
@@ -43,24 +43,24 @@ const createEmptyResults = (): Record<ISP, ISPResult> => {
 
 export default function Home() {
     const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'settings'>('dashboard');
-    const [domains, setDomains] = useState<Domain[]>([]);
-    const [newUrl, setNewUrl] = useState('');
-    const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-    const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [nextScanTime, setNextScanTime] = useState<number | null>(null);
-
-    // Refs for logic
-    const loadedRef = useRef(false);
-    const domainsRef = useRef<Domain[]>([]);
-    const settingsRef = useRef<AppSettings>(defaultSettings);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings'>('dashboard');
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [newUrl, setNewUrl] = useState('');
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [nextScanTime, setNextScanTime] = useState<number | null>(null);
+  
+  // Refs for logic
+  const loadedRef = useRef(false);
+  const domainsRef = useRef<Domain[]>([]);
+  const settingsRef = useRef<AppSettings>(defaultSettings);
     const kvLimitExceededRef = useRef(false); // Track KV limit status
     const nextScanTimeRef = useRef<number | null>(null); // Track nextScanTime without causing re-renders
 
-    // Sync refs
-    useEffect(() => { domainsRef.current = domains; }, [domains]);
-    useEffect(() => { settingsRef.current = settings; }, [settings]);
+  // Sync refs
+  useEffect(() => { domainsRef.current = domains; }, [domains]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
 
     // Check authentication on mount
     useEffect(() => {
@@ -118,7 +118,7 @@ export default function Home() {
     }, []);
 
     // Load Data on Mount - Try Workers API first, fallback to localStorage
-    useEffect(() => {
+  useEffect(() => {
         if (typeof window !== 'undefined' && !loadedRef.current && isAuthenticated === true) {
             console.log('🔄 [LoadData] Starting to load data, isAuthenticated:', isAuthenticated);
             const loadData = async () => {
@@ -143,9 +143,9 @@ export default function Home() {
                                 } else {
                                     // No domains in Workers, check localStorage
                                     const savedDomains = localStorage.getItem('sentinel_domains');
-                                    if (savedDomains) {
+            if (savedDomains) {
                                         try {
-                                            setDomains(JSON.parse(savedDomains));
+              setDomains(JSON.parse(savedDomains));
                                             addLog('Loaded domains from localStorage (backup)', 'info');
                                         } catch {
                                             // If parse fails, use defaults
@@ -159,17 +159,17 @@ export default function Home() {
                                             }));
                                             setDomains(initialDomains);
                                         }
-                                    } else {
+            } else {
                                         // No domains anywhere, use defaults
-                                        const initialDomains = DEFAULT_DOMAINS.map(url => ({
-                                            id: generateId(),
-                                            url,
-                                            hostname: getHostname(url),
-                                            lastCheck: null,
-                                            results: createEmptyResults(),
-                                            isMonitoring: true
-                                        }));
-                                        setDomains(initialDomains);
+                const initialDomains = DEFAULT_DOMAINS.map(url => ({
+                    id: generateId(),
+                    url,
+                    hostname: getHostname(url),
+                    lastCheck: null,
+                    results: createEmptyResults(),
+                    isMonitoring: true
+                }));
+                setDomains(initialDomains);
                                     }
                                 }
                             } else {
@@ -204,9 +204,9 @@ export default function Home() {
                                 } else {
                                     // No settings in Workers, try localStorage
                                     const savedSettings = localStorage.getItem('sentinel_settings');
-                                    if (savedSettings) {
+            if (savedSettings) {
                                         try {
-                                            setSettings(JSON.parse(savedSettings));
+              setSettings(JSON.parse(savedSettings));
                                             addLog('Loaded settings from localStorage (backup)', 'info');
                                         } catch {
                                             // Use defaults
@@ -230,7 +230,7 @@ export default function Home() {
                             // Fallback to localStorage only if Workers API completely fails
                             const savedDomains = localStorage.getItem('sentinel_domains');
                             const savedSettings = localStorage.getItem('sentinel_settings');
-
+                            
                             if (savedDomains) {
                                 try {
                                     setDomains(JSON.parse(savedDomains));
@@ -238,7 +238,7 @@ export default function Home() {
                                     // Use defaults
                                 }
                             }
-
+                            
                             if (savedSettings) {
                                 try {
                                     setSettings(JSON.parse(savedSettings));
@@ -251,7 +251,7 @@ export default function Home() {
                         // No Workers URL, use localStorage
                         const savedDomains = localStorage.getItem('sentinel_domains');
                         const savedSettings = localStorage.getItem('sentinel_settings');
-
+                        
                         if (savedDomains) {
                             try {
                                 setDomains(JSON.parse(savedDomains));
@@ -259,7 +259,7 @@ export default function Home() {
                                 // Use defaults
                             }
                         }
-
+                        
                         if (savedSettings) {
                             try {
                                 setSettings(JSON.parse(savedSettings));
@@ -268,12 +268,12 @@ export default function Home() {
                             }
                         }
                     }
-                } catch (e) {
+        } catch (e) {
                     console.error("Error loading data:", e);
                     // Last resort: try localStorage
                     const savedDomains = localStorage.getItem('sentinel_domains');
                     const savedSettings = localStorage.getItem('sentinel_settings');
-
+                    
                     if (savedDomains) {
                         try {
                             setDomains(JSON.parse(savedDomains));
@@ -281,7 +281,7 @@ export default function Home() {
                             // Use defaults
                         }
                     }
-
+                    
                     if (savedSettings) {
                         try {
                             setSettings(JSON.parse(savedSettings));
@@ -435,135 +435,152 @@ export default function Home() {
             };
 
             loadData();
-        }
+    }
     }, [isAuthenticated, addLog]);
 
     // Load results from Workers - make it a reusable callback
     const loadResultsFromWorkers = useCallback(async () => {
         const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
 
-        if (!workersUrl) {
-            console.log('Workers URL not configured, skipping results fetch');
-            return;
-        }
+            if (!workersUrl) {
+                console.log('Workers URL not configured, skipping results fetch');
+                return;
+            }
 
-        try {
-            addLog('Fetching results from Workers API...', 'info');
-            const response = await fetchResultsFromWorkers(workersUrl);
+            try {
+                addLog('Fetching results from Workers API...', 'info');
+                const response = await fetchResultsFromWorkers(workersUrl);
 
-            if (response.success && response.results.length > 0) {
-                addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
+                if (response.success && response.results.length > 0) {
+                    addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
 
-                // Normalize hostname for matching (remove www, lowercase)
-                const normalizeHostname = (hostname: string): string => {
-                    return hostname.toLowerCase().replace(/^www\./, '');
-                };
-
-                // Group results by normalized hostname
-                const resultsByHostname = new Map<string, typeof response.results>();
-                response.results.forEach(result => {
-                    const normalized = normalizeHostname(result.hostname);
-                    if (!resultsByHostname.has(normalized)) {
-                        resultsByHostname.set(normalized, []);
-                    }
-                    resultsByHostname.get(normalized)!.push(result);
-                });
-
-                console.log('📊 [loadResultsFromWorkers] Results by normalized hostname:', Array.from(resultsByHostname.entries()).map(([h, r]) => [h, r.length]));
-                console.log('📊 [loadResultsFromWorkers] All result hostnames:', response.results.map(r => `${r.hostname} -> ${normalizeHostname(r.hostname)}`));
-                console.log('📊 [loadResultsFromWorkers] Current domains:', domainsRef.current.map(d => `${d.hostname} -> ${normalizeHostname(d.hostname)}`));
-
-                // Update domains with results
-                setDomains(prev => prev.map(domain => {
-                    const normalizedDomainHostname = normalizeHostname(domain.hostname);
-                    const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
-
-                    if (!hostnameResults || hostnameResults.length === 0) {
-                        console.log(`⚠️ [loadResultsFromWorkers] No results for ${domain.hostname} (normalized: ${normalizedDomainHostname})`);
-                        console.log(`   Available normalized hostnames:`, Array.from(resultsByHostname.keys()));
-                        return domain;
-                    }
-
-                    console.log(`✅ [loadResultsFromWorkers] Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
-
-                    // Map ISP names and group by mapped ISP, then use latest result for each ISP
-                    // Note: True and DTAC use the same network (True Corporation), so they map to the same ISP
-                    const ispMap: Record<string, ISP> = {
-                        'Unknown': ISP.AIS,
-                        'unknown': ISP.AIS,
-                        'AIS': ISP.AIS,
-                        'True': ISP.TRUE,      // True maps to True/DTAC
-                        'TRUE': ISP.TRUE,
-                        'true': ISP.TRUE,
-                        'DTAC': ISP.TRUE,      // DTAC maps to True/DTAC (same network)
-                        'dtac': ISP.TRUE,
-                        'NT': ISP.NT,
-                        'nt': ISP.NT,
-                        'Global (Google)': ISP.GLOBAL,
-                        'Global': ISP.GLOBAL,
+                    // Normalize hostname for matching (remove www, lowercase)
+                    const normalizeHostname = (hostname: string): string => {
+                        return hostname.toLowerCase().replace(/^www\./, '');
                     };
 
-                    // Group results by mapped ISP and get best result for each ISP
-                    // Priority: 1) BLOCKED status (always prefer), 2) ISP name clarity (AIS > Unknown), 3) Latest timestamp
-                    const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
-                    hostnameResults.forEach(workerResult => {
-                        const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
-                        const existing = resultsByMappedISP.get(mappedISP);
+                    // Group results by normalized hostname
+                    const resultsByHostname = new Map<string, typeof response.results>();
+                    response.results.forEach(result => {
+                        const normalized = normalizeHostname(result.hostname);
+                        if (!resultsByHostname.has(normalized)) {
+                            resultsByHostname.set(normalized, []);
+                        }
+                        resultsByHostname.get(normalized)!.push(result);
+                    });
 
-                        if (!existing) {
-                            resultsByMappedISP.set(mappedISP, workerResult);
-                        } else {
-                            // Priority rules (in order):
-                            // 1. Always prefer BLOCKED over ACTIVE (BLOCKED is more accurate)
-                            if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
+                    console.log('📊 [loadResultsFromWorkers] Results by normalized hostname:', Array.from(resultsByHostname.entries()).map(([h, r]) => [h, r.length]));
+                    console.log('📊 [loadResultsFromWorkers] All result hostnames:', response.results.map(r => `${r.hostname} -> ${normalizeHostname(r.hostname)}`));
+                    console.log('📊 [loadResultsFromWorkers] Current domains:', domainsRef.current.map(d => `${d.hostname} -> ${normalizeHostname(d.hostname)}`));
+
+                    // Update domains with results
+                    setDomains(prev => prev.map(domain => {
+                        const normalizedDomainHostname = normalizeHostname(domain.hostname);
+                        const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
+
+                        if (!hostnameResults || hostnameResults.length === 0) {
+                            console.log(`⚠️ [loadResultsFromWorkers] No results for ${domain.hostname} (normalized: ${normalizedDomainHostname})`);
+                            console.log(`   Available normalized hostnames:`, Array.from(resultsByHostname.keys()));
+                            return domain;
+                        }
+
+                        console.log(`✅ [loadResultsFromWorkers] Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
+
+                        // Map ISP names and group by mapped ISP, then use latest result for each ISP
+                        // Note: True and DTAC use the same network (True Corporation), so they map to the same ISP
+                        const ispMap: Record<string, ISP> = {
+                            'Unknown': ISP.AIS,
+                            'unknown': ISP.AIS,
+                            'AIS': ISP.AIS,
+                            'True': ISP.TRUE,      // True maps to True/DTAC
+                            'TRUE': ISP.TRUE,
+                            'true': ISP.TRUE,
+                            'DTAC': ISP.TRUE,      // DTAC maps to True/DTAC (same network)
+                            'dtac': ISP.TRUE,
+                            'NT': ISP.NT,
+                            'nt': ISP.NT,
+                            'Global (Google)': ISP.GLOBAL,
+                            'Global': ISP.GLOBAL,
+                        };
+
+                        // Group results by mapped ISP and get best result for each ISP
+                        // Priority: 1) BLOCKED status (always prefer), 2) ISP name clarity (AIS > Unknown), 3) Latest timestamp
+                        const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
+                        hostnameResults.forEach(workerResult => {
+                            const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
+                            const existing = resultsByMappedISP.get(mappedISP);
+                            
+                            if (!existing) {
                                 resultsByMappedISP.set(mappedISP, workerResult);
-                            } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
-                                // Keep existing BLOCKED - don't override with ACTIVE
                             } else {
-                                // Both have same status (both ACTIVE or both BLOCKED)
-                                // 2. Prefer ISP name clarity (AIS > Unknown)
-                                const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
-                                const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
-
-                                if (!newIsUnknown && existingIsUnknown) {
-                                    // New result has clear ISP name, existing is Unknown
+                                // Priority rules (in order):
+                                // 1. Always prefer BLOCKED over ACTIVE (BLOCKED is more accurate)
+                                if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
                                     resultsByMappedISP.set(mappedISP, workerResult);
-                                } else if (newIsUnknown && !existingIsUnknown) {
-                                    // Keep existing clear ISP name
+                                } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
+                                    // Keep existing BLOCKED - don't override with ACTIVE
                                 } else {
-                                    // Both have same clarity, use latest timestamp
-                                    const existingTimestamp = existing.timestamp || 0;
-                                    const newTimestamp = workerResult.timestamp || 0;
-                                    if (newTimestamp > existingTimestamp) {
+                                    // Both have same status (both ACTIVE or both BLOCKED)
+                                    // 2. Prefer ISP name clarity (AIS > Unknown)
+                                    const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
+                                    const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
+                                    
+                                    if (!newIsUnknown && existingIsUnknown) {
+                                        // New result has clear ISP name, existing is Unknown
                                         resultsByMappedISP.set(mappedISP, workerResult);
+                                    } else if (newIsUnknown && !existingIsUnknown) {
+                                        // Keep existing clear ISP name
+                                    } else {
+                                        // Both have same clarity, use latest timestamp
+                                        const existingTimestamp = existing.timestamp || 0;
+                                        const newTimestamp = workerResult.timestamp || 0;
+                                        if (newTimestamp > existingTimestamp) {
+                                            resultsByMappedISP.set(mappedISP, workerResult);
+                                        }
                                     }
                                 }
                             }
-                        }
-                    });
+                        });
 
-                    console.log(`📅 [loadResultsFromWorkers] Latest results by ISP:`, Array.from(resultsByMappedISP.entries()).map(([isp, r]) => `${isp}:${r.isp_name}:${r.status} (${r.timestamp})`));
+                        console.log(`📅 [loadResultsFromWorkers] Latest results by ISP:`, Array.from(resultsByMappedISP.entries()).map(([isp, r]) => `${isp}:${r.isp_name}:${r.status} (${r.timestamp})`));
 
-                    // Convert Workers results to ISPResult format
-                    const updatedResults = { ...domain.results };
-                    resultsByMappedISP.forEach((workerResult, isp) => {
-                        const ispName = workerResult.isp_name;
-                        console.log(`🔄 [loadResultsFromWorkers] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
-
-                        // If result is for True/DTAC (mapped from True or DTAC), update both TRUE and DTAC slots (they share the same network)
-                        const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
-                            ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
-
-                        if (isTrueOrDTAC) {
-                            // Update both 'True' and 'DTAC' string keys, and enum keys
-                            const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
-                            slots.forEach(slotKey => {
-                                if (updatedResults[slotKey]) {
-                                    const existingResult = updatedResults[slotKey];
-                                    const targetISP = slotKey === 'True' ? ISP.TRUE : slotKey === 'DTAC' ? ISP.DTAC : slotKey;
-                                    console.log(`✅ [loadResultsFromWorkers] Updating ${slotKey} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
-                                    updatedResults[slotKey] = {
-                                        isp: targetISP,
+                        // Convert Workers results to ISPResult format
+                        const updatedResults = { ...domain.results };
+                        resultsByMappedISP.forEach((workerResult, isp) => {
+                            const ispName = workerResult.isp_name;
+                            console.log(`🔄 [loadResultsFromWorkers] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                            
+                            // If result is for True/DTAC (mapped from True or DTAC), update both TRUE and DTAC slots (they share the same network)
+                            const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' || 
+                                               ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
+                            
+                            if (isTrueOrDTAC) {
+                                // Update both 'True' and 'DTAC' string keys, and enum keys
+                                const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
+                                slots.forEach(slotKey => {
+                                    if (updatedResults[slotKey]) {
+                                        const existingResult = updatedResults[slotKey];
+                                        const targetISP = slotKey === 'True' ? ISP.TRUE : slotKey === 'DTAC' ? ISP.DTAC : slotKey;
+                                        console.log(`✅ [loadResultsFromWorkers] Updating ${slotKey} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                        updatedResults[slotKey] = {
+                                            isp: targetISP,
+                                            status: workerResult.status as Status,
+                                            ip: workerResult.ip || '',
+                                            latency: workerResult.latency || 0,
+                                            details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                            source: 'mobile-app',
+                                            deviceId: workerResult.device_id,
+                                            timestamp: workerResult.timestamp,
+                                        };
+                                    }
+                                });
+                            } else {
+                                // For other ISPs, update normally
+                                if (updatedResults[isp]) {
+                                    const existingResult = updatedResults[isp];
+                                    console.log(`✅ [loadResultsFromWorkers] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                    updatedResults[isp] = {
+                                        isp: isp,
                                         status: workerResult.status as Status,
                                         ip: workerResult.ip || '',
                                         latency: workerResult.latency || 0,
@@ -572,41 +589,24 @@ export default function Home() {
                                         deviceId: workerResult.device_id,
                                         timestamp: workerResult.timestamp,
                                     };
+                                } else {
+                                    console.warn(`⚠️ [loadResultsFromWorkers] No result slot for ISP: ${isp} (mapped from ${ispName})`);
                                 }
-                            });
-                        } else {
-                            // For other ISPs, update normally
-                            if (updatedResults[isp]) {
-                                const existingResult = updatedResults[isp];
-                                console.log(`✅ [loadResultsFromWorkers] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
-                                updatedResults[isp] = {
-                                    isp: isp,
-                                    status: workerResult.status as Status,
-                                    ip: workerResult.ip || '',
-                                    latency: workerResult.latency || 0,
-                                    details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
-                                    source: 'mobile-app',
-                                    deviceId: workerResult.device_id,
-                                    timestamp: workerResult.timestamp,
-                                };
-                            } else {
-                                console.warn(`⚠️ [loadResultsFromWorkers] No result slot for ISP: ${isp} (mapped from ${ispName})`);
                             }
-                        }
-                    });
+                        });
 
-                    // Find latest timestamp
-                    const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
+                        // Find latest timestamp
+                        const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
 
-                    return {
-                        ...domain,
-                        results: updatedResults,
-                        lastCheck: latestTimestamp,
-                    };
-                }));
-            } else {
-                addLog('No results found from mobile app', 'info');
-            }
+                        return {
+                            ...domain,
+                            results: updatedResults,
+                            lastCheck: latestTimestamp,
+                        };
+                    }));
+                } else {
+                    addLog('No results found from mobile app', 'info');
+                }
         } catch (error) {
             console.error('Error loading results from Workers:', error);
             addLog('Failed to load results from Workers API', 'error');
@@ -614,7 +614,7 @@ export default function Home() {
     }, [addLog]);
 
     // Load results immediately when component mounts
-    useEffect(() => {
+  useEffect(() => {
         if (!loadedRef.current) return;
         loadResultsFromWorkers();
     }, [loadResultsFromWorkers]);
@@ -640,19 +640,19 @@ export default function Home() {
                         // Only update if different (to avoid unnecessary re-renders)
                         const currentHostnames = domainsRef.current.map(d => d.hostname).sort().join(',');
                         const newHostnames = domainsData.domains.map((d: any) => d.hostname).sort().join(',');
-
+                        
                         if (currentHostnames !== newHostnames) {
                             console.log('🔄 [Sync] Domains changed, updating...');
                             setDomains(domainsData.domains);
                         }
-
+                        
                         // Also check for telegram_chat_id changes
                         const currentDomains = domainsRef.current;
                         const hasChanges = domainsData.domains.some((newDomain: any) => {
                             const currentDomain = currentDomains.find(d => d.hostname === newDomain.hostname);
                             return !currentDomain || currentDomain.telegramChatId !== newDomain.telegramChatId;
                         });
-
+                        
                         if (hasChanges) {
                             console.log('🔄 [Sync] Domain settings changed (telegram_chat_id), updating...');
                             setDomains(domainsData.domains);
@@ -668,7 +668,7 @@ export default function Home() {
                         // Only update if different
                         const currentSettingsStr = JSON.stringify(settingsRef.current);
                         const newSettingsStr = JSON.stringify(settingsData.settings);
-
+                        
                         if (currentSettingsStr !== newSettingsStr) {
                             console.log('🔄 [Sync] Settings changed, updating...');
                             setSettings(settingsData.settings);
@@ -716,7 +716,7 @@ export default function Home() {
         let lastCheckTime = Math.max(...domainsRef.current.map(d => d.lastCheck || 0), Date.now() - 60000); // Default to 1 minute ago
         let pollInterval = 30000; // Start with 30 seconds (reduced from 5 seconds to save requests)
         let consecutiveNoUpdates = 0; // Track consecutive polls with no updates
-
+        
         console.log('🔄 [Poll] Starting adaptive polling to detect mobile app results (starts at 30s)');
         console.log(`🕐 [Poll] Initial lastCheckTime: ${lastCheckTime} (${new Date(lastCheckTime).toLocaleTimeString()})`);
 
@@ -724,11 +724,11 @@ export default function Home() {
             try {
                 // Check for new results (only newer than lastCheckTime)
                 const response = await fetchResultsFromWorkers(workersUrl);
-
+                
                 if (response.success && response.results.length > 0) {
                     // Check if we have new results (compare timestamps)
                     const latestResult = Math.max(...response.results.map(r => r.timestamp));
-
+                    
                     if (latestResult > lastCheckTime) {
                         console.log(`🔄 [Poll] Found NEW results! Latest timestamp: ${latestResult} (was: ${lastCheckTime})`);
                         addLog(`📱 New results from mobile app: ${response.results.length} updates`, 'success');
@@ -758,7 +758,7 @@ export default function Home() {
             } catch (error) {
                 console.error('Poll error:', error);
             }
-
+            
             // Schedule next poll with adaptive interval
             setTimeout(poll, pollInterval);
         };
@@ -802,34 +802,34 @@ export default function Home() {
 
             // Debounce Workers API save (wait 2 seconds after last change)
             const timeoutId = setTimeout(() => {
-                const saveToWorkers = async () => {
-                    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
-                    if (workersUrl) {
-                        try {
-                            const response = await fetch(`${workersUrl}/api/frontend/domains`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ domains })
-                            });
-                            if (response.ok) {
-                                const data = await response.json();
-                                if (data.saved) {
-                                    console.log('Domains saved to Workers:', domains.length);
-                                }
+            const saveToWorkers = async () => {
+                const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                if (workersUrl) {
+                    try {
+                        const response = await fetch(`${workersUrl}/api/frontend/domains`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ domains })
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.saved) {
+                                console.log('Domains saved to Workers:', domains.length);
                             }
-                        } catch (error) {
-                            console.error('Failed to save domains to Workers:', error);
                         }
+                    } catch (error) {
+                        console.error('Failed to save domains to Workers:', error);
                     }
-                };
-                saveToWorkers();
+                }
+            };
+            saveToWorkers();
             }, 2000); // Wait 2 seconds after last change
 
             return () => clearTimeout(timeoutId);
         }
-    }, [domains]);
+  }, [domains]);
 
-    useEffect(() => {
+  useEffect(() => {
         if (loadedRef.current) {
             // Save to localStorage (backup)
             localStorage.setItem('sentinel_settings', JSON.stringify(settings));
@@ -857,7 +857,7 @@ export default function Home() {
             };
             saveToWorkers();
         }
-    }, [settings]);
+  }, [settings]);
 
     // Helper function to sync domains to Workers
     const syncDomainsToWorkers = useCallback(async (domainsToSync: Domain[]) => {
@@ -909,21 +909,21 @@ export default function Home() {
                 if (verifyResponse.ok) {
                     const verifyData = await verifyResponse.json();
                     console.log('✅ Verified domains in Workers:', verifyData.domains);
-
+                    
                     // Normalize hostnames for comparison (remove www, lowercase)
                     const normalizeHostname = (hostname: string): string => {
                         return hostname.toLowerCase().replace(/^www\./, '');
                     };
-
+                    
                     const normalizedExpected = domainsToSync.map(d => normalizeHostname(d.hostname)).sort();
                     const normalizedGot = (verifyData.domains || []).map((d: any) => normalizeHostname(d.hostname || d)).sort();
-
+                    
                     // Check if normalized hostnames match (ignore order and www prefix)
                     const expectedSet = new Set(normalizedExpected);
                     const gotSet = new Set(normalizedGot);
                     const missing = normalizedExpected.filter(h => !gotSet.has(h));
                     const extra = normalizedGot.filter(h => !expectedSet.has(h));
-
+                    
                     if (missing.length > 0 || extra.length > 0) {
                         if (missing.length > 0) {
                             addLog(`Warning: ${missing.length} domain(s) missing in Workers: ${missing.join(', ')}`, 'error');
@@ -971,7 +971,7 @@ export default function Home() {
     }, [addLog]);
 
     const handleAddDomain = async (e: React.FormEvent) => {
-        e.preventDefault();
+    e.preventDefault();
 
         console.log('=== HANDLE ADD DOMAIN DEBUG ===');
         console.log('newUrl:', newUrl);
@@ -980,26 +980,26 @@ export default function Home() {
             console.log('❌ No URL provided, returning');
             return;
         }
-
-        const hostname = getHostname(newUrl);
+    
+    const hostname = getHostname(newUrl);
         console.log('Hostname:', hostname);
 
-        const newDomain: Domain = {
-            id: generateId(),
-            url: newUrl,
-            hostname,
-            lastCheck: null,
-            results: createEmptyResults(),
-            isMonitoring: true,
-        };
+    const newDomain: Domain = {
+      id: generateId(),
+      url: newUrl,
+      hostname,
+      lastCheck: null,
+      results: createEmptyResults(),
+      isMonitoring: true,
+    };
 
         const updatedDomains = [...domainsRef.current, newDomain];
         console.log('Updated domains:', updatedDomains.map(d => d.hostname));
         console.log('Current domainsRef:', domainsRef.current.map(d => d.hostname));
 
         setDomains(updatedDomains);
-        setNewUrl('');
-        addLog(`Added domain: ${hostname}`, 'info');
+    setNewUrl('');
+    addLog(`Added domain: ${hostname}`, 'info');
 
         console.log('About to call syncDomainsToWorkers...');
         console.log('syncDomainsToWorkers function:', typeof syncDomainsToWorkers);
@@ -1026,7 +1026,7 @@ export default function Home() {
 
         // Sync immediately after deleting
         await syncDomainsToWorkers(updatedDomains);
-    };
+  };
 
     const handleUpdateDomain = async (id: string, updates: Partial<Domain>) => {
         const updatedDomains = domainsRef.current.map(d => d.id === id ? { ...d, ...updates } : d);
@@ -1053,15 +1053,15 @@ export default function Home() {
                 setDomains(updatedDomains);
             }
         }
-    };
+  };
 
-    const checkSingleDomain = useCallback(async (domainId: string) => {
-        const currentDomain = domainsRef.current.find(d => d.id === domainId);
-        if (!currentDomain) return;
+  const checkSingleDomain = useCallback(async (domainId: string) => {
+    const currentDomain = domainsRef.current.find(d => d.id === domainId);
+    if (!currentDomain) return;
 
         addLog(`Requesting mobile app to check ${currentDomain.hostname}...`, 'info');
 
-        const currentSettings = settingsRef.current;
+    const currentSettings = settingsRef.current;
         const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.workersUrl || currentSettings.backendUrl;
 
         if (workersUrl) {
@@ -1090,16 +1090,16 @@ export default function Home() {
                 const triggerData = await triggerResponse.json();
                 if (triggerData.success) {
                     addLog(`Mobile app check triggered. Waiting for results...`, 'info');
-
+                    
                     // Poll for results (similar to runAllChecks)
                     let attempts = 0;
                     const maxAttempts = 15; // 30 seconds total (2 seconds * 15)
-
+                    
                     const pollForResults = async () => {
                         attempts++;
                         try {
                             const response = await fetchResultsFromWorkers(workersUrl);
-
+                            
                             if (response.success && response.results.length > 0) {
                                 // Find results for this specific domain
                                 const domainResults = response.results.filter(r => {
@@ -1130,7 +1130,7 @@ export default function Home() {
                                     hostnameResults.forEach(workerResult => {
                                         const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
                                         const existing = resultsByMappedISP.get(mappedISP);
-
+                                        
                                         if (!existing) {
                                             resultsByMappedISP.set(mappedISP, workerResult);
                                         } else {
@@ -1141,7 +1141,7 @@ export default function Home() {
                                             } else {
                                                 const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
                                                 const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
-
+                                                
                                                 if (!newIsUnknown && existingIsUnknown) {
                                                     resultsByMappedISP.set(mappedISP, workerResult);
                                                 } else {
@@ -1158,9 +1158,9 @@ export default function Home() {
                                     const updatedResults = { ...currentDomain.results };
                                     resultsByMappedISP.forEach((workerResult, isp) => {
                                         const ispName = workerResult.isp_name;
-                                        const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
-                                            ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
-
+                                        const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' || 
+                                                           ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
+                                        
                                         if (isTrueOrDTAC) {
                                             const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
                                             slots.forEach(slotKey => {
@@ -1195,7 +1195,7 @@ export default function Home() {
                                     });
 
                                     const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp || 0));
-
+                                    
                                     setDomains(prev => prev.map(d => {
                                         if (d.id === domainId) {
                                             return { ...d, lastCheck: latestTimestamp, results: updatedResults };
@@ -1204,15 +1204,15 @@ export default function Home() {
                                     }));
 
                                     const blockedISPs = Object.values(updatedResults)
-                                        .filter(r => r.status === Status.BLOCKED)
-                                        .map(r => r.isp);
+        .filter(r => r.status === Status.BLOCKED)
+        .map(r => r.isp);
 
-                                    if (blockedISPs.length > 0) {
-                                        addLog(`${currentDomain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
-
+    if (blockedISPs.length > 0) {
+        addLog(`${currentDomain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
+        
                                         // Note: Telegram alerts are now sent by Workers Cron job (not from frontend)
                                         // Workers will send combined table alerts for all domains at configured intervals
-                                    } else {
+    } else {
                                         addLog(`${currentDomain.hostname}: Check complete`, 'success');
                                     }
                                     return; // Success, stop polling
@@ -1221,7 +1221,7 @@ export default function Home() {
 
                             if (attempts < maxAttempts) {
                                 setTimeout(pollForResults, 2000);
-                            } else {
+        } else {
                                 addLog(`Timeout waiting for results for ${currentDomain.hostname}`, 'error');
                             }
                         } catch (error) {
@@ -1246,15 +1246,15 @@ export default function Home() {
         } else {
             addLog('Workers URL not configured', 'error');
         }
-    }, [addLog]);
+  }, [addLog]);
 
-    const runAllChecks = useCallback(async () => {
-        if (loading) return;
-        setLoading(true);
-        addLog('Starting full scan...', 'info');
+  const runAllChecks = useCallback(async () => {
+    if (loading) return;
+    setLoading(true);
+    addLog('Starting full scan...', 'info');
         console.log('🔔 [Frontend Alert] runAllChecks called');
-
-        const currentSettings = settingsRef.current;
+    
+    const currentSettings = settingsRef.current;
         const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.workersUrl || currentSettings.backendUrl;
         console.log('🔔 [Frontend Alert] Workers URL:', workersUrl);
 
@@ -1400,15 +1400,15 @@ export default function Home() {
                                     hostnameResults.forEach(workerResult => {
                                         const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
                                         const existing = resultsByMappedISP.get(mappedISP);
-
+                                        
                                         console.log(`🔍 [pollForResults] Processing: ${workerResult.isp_name} -> ${mappedISP}, status: ${workerResult.status}, timestamp: ${workerResult.timestamp}`);
-
+                                        
                                         if (!existing) {
                                             console.log(`  ✅ First result for ${mappedISP}, setting: ${workerResult.isp_name}:${workerResult.status}`);
                                             resultsByMappedISP.set(mappedISP, workerResult);
                                         } else {
                                             console.log(`  🔄 Comparing with existing: ${existing.isp_name}:${existing.status} (timestamp: ${existing.timestamp})`);
-
+                                            
                                             // Priority rules (in order):
                                             // 1. Always prefer BLOCKED over ACTIVE (BLOCKED is more accurate)
                                             if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
@@ -1422,7 +1422,7 @@ export default function Home() {
                                                 // 2. Prefer ISP name clarity (AIS > Unknown)
                                                 const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
                                                 const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
-
+                                                
                                                 if (!newIsUnknown && existingIsUnknown) {
                                                     console.log(`  ✅ Preferring clear ISP name: ${workerResult.isp_name} > ${existing.isp_name}`);
                                                     // New result has clear ISP name, existing is Unknown
@@ -1452,11 +1452,11 @@ export default function Home() {
                                     resultsByMappedISP.forEach((workerResult, isp) => {
                                         const ispName = workerResult.isp_name;
                                         console.log(`🔄 [pollForResults] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
-
+                                        
                                         // If result is for True/DTAC (mapped from True or DTAC), update both TRUE and DTAC slots (they share the same network)
-                                        const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
-                                            ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
-
+                                        const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' || 
+                                                           ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
+                                        
                                         if (isTrueOrDTAC) {
                                             // Update both 'True' and 'DTAC' string keys, and enum keys
                                             const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
@@ -1539,7 +1539,7 @@ export default function Home() {
                                     const blockedISPs = Object.values(updatedResults)
                                         .filter(r => r.status === Status.BLOCKED)
                                         .map(r => r.isp as ISP);
-
+                                    
                                     if (blockedISPs.length > 0) {
                                         hasBlockedDomains = true;
                                         addLog(`${domain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
@@ -1563,7 +1563,7 @@ export default function Home() {
                                 // Send Telegram alert table (combined table for all domains) after scan completes
                                 // Fetch latest results from D1 to ensure we use the most up-to-date data
                                 setTimeout(async () => {
-                                    const currentSettings = settingsRef.current;
+                                        const currentSettings = settingsRef.current;
 
                                     // Fetch latest results from D1 to ensure we use the most up-to-date data
                                     let domainsForAlert = domainsRef.current;
@@ -1705,15 +1705,15 @@ export default function Home() {
 
                                                 const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
 
-                                                return {
-                                                    ...domain,
-                                                    results: updatedResults,
-                                                    lastCheck: latestTimestamp,
-                                                };
+                                    return {
+                                        ...domain,
+                                        results: updatedResults,
+                                        lastCheck: latestTimestamp,
+                                    };
                                             });
 
                                             console.log(`🔔 [Frontend Alert] Updated ${domainsForAlert.length} domains with latest results from D1`);
-                                            
+
                                             // Debug: Log sample domain results to verify True/DTAC status
                                             if (domainsForAlert.length > 0) {
                                                 const sampleDomain = domainsForAlert[0];
@@ -1746,20 +1746,57 @@ export default function Home() {
                                             console.log(`🔔 [Frontend Alert] Using domainsForAlert (updated from D1) - NOT domainsRef.current`);
                                             addLog(`Sending Telegram alert table (${domainsForAlert.length} domains)...`, 'info');
 
-                                            // Send combined table alert to default chat
-                                            // Use domainsForAlert which was updated from D1, not domainsRef.current
-                                            const sent = await sendTelegramAlertTable(
-                                                currentSettings.telegramBotToken,
-                                                currentSettings.telegramChatId,
-                                                domainsForAlert  // This is the updated data from D1
-                                            );
-
-                                            if (sent) {
-                                                console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully');
-                                                addLog(`Telegram alert table sent (${domainsForAlert.length} domains)`, 'success');
+                                            // Group domains by custom chat ID
+                                            const domainsByChatId = new Map<string, typeof domainsForAlert>();
+                                            
+                                            // Add all domains to default chat (summary)
+                                            if (currentSettings.telegramChatId) {
+                                                domainsByChatId.set(currentSettings.telegramChatId, domainsForAlert);
+                                                console.log(`🔔 [Frontend Alert] Added ${domainsForAlert.length} domains to default chat (${currentSettings.telegramChatId}) for summary`);
+                                            }
+                                            
+                                            // Add domains with custom chat ID to their specific chats
+                                            domainsForAlert.forEach(domain => {
+                                                if (domain.telegramChatId && domain.telegramChatId !== currentSettings.telegramChatId) {
+                                                    if (!domainsByChatId.has(domain.telegramChatId)) {
+                                                        domainsByChatId.set(domain.telegramChatId, []);
+                                                    }
+                                                    domainsByChatId.get(domain.telegramChatId)!.push(domain);
+                                                    console.log(`🔔 [Frontend Alert] Added domain ${domain.hostname} to custom chat (${domain.telegramChatId})`);
+                                                }
+                                            });
+                                            
+                                            // Send alerts to each chat ID
+                                            let successCount = 0;
+                                            let failCount = 0;
+                                            
+                                            for (const [chatId, domains] of domainsByChatId.entries()) {
+                                                try {
+                                                    const sent = await sendTelegramAlertTable(
+                                                        currentSettings.telegramBotToken,
+                                                        chatId,
+                                                        domains
+                                                    );
+                                                    
+                                                    if (sent) {
+                                                        successCount++;
+                                                        console.log(`🔔 [Frontend Alert] ✅ Telegram alert sent to chat ${chatId} (${domains.length} domains)`);
+                                                    } else {
+                                                        failCount++;
+                                                        console.error(`🔔 [Frontend Alert] ❌ Failed to send to chat ${chatId}`);
+                                                    }
+                                                } catch (error) {
+                                                    failCount++;
+                                                    console.error(`🔔 [Frontend Alert] ❌ Error sending to chat ${chatId}:`, error);
+                                                }
+                                            }
+                                            
+                                            if (successCount > 0) {
+                                                console.log(`🔔 [Frontend Alert] ✅ Sent ${successCount} alert(s) successfully`);
+                                                addLog(`Telegram alerts sent: ${successCount} success, ${failCount} failed`, successCount === domainsByChatId.size ? 'success' : 'info');
                                             } else {
-                                                console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table (sent = false)');
-                                                addLog('Failed to send Telegram alert table', 'error');
+                                                console.error('🔔 [Frontend Alert] ❌ All alerts failed');
+                                                addLog('Failed to send all Telegram alerts', 'error');
                                             }
                                         } catch (error) {
                                             console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
@@ -1781,7 +1818,7 @@ export default function Home() {
                                 if (currentInterval > 0) {
                                     const intervalMs = currentInterval * 60 * 1000;
                                     const nextScan = Date.now() + intervalMs;
-
+                                    
                                     // Save to Workers API (D1) - this is where we write nextScanTime
                                     try {
                                         const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
@@ -1811,8 +1848,8 @@ export default function Home() {
                                     }
                                 }
 
-                                setLoading(false);
-                                addLog('Scan complete.', 'success');
+    setLoading(false);
+    addLog('Scan complete.', 'success');
                                 return;
                             } else {
                                 console.log('Results are older than trigger, waiting for new results...');
@@ -1963,18 +2000,57 @@ export default function Home() {
                                                 console.log(`🔔 [Frontend Alert] Sending alert table with ${domainsForAlert.length} domains (from D1 after timeout)`);
                                                 addLog(`Sending Telegram alert table (${domainsForAlert.length} domains from D1)...`, 'info');
 
-                                                const sent = await sendTelegramAlertTable(
-                                                    currentSettings.telegramBotToken,
-                                                    currentSettings.telegramChatId,
-                                                    domainsForAlert
-                                                );
-
-                                                if (sent) {
-                                                    console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully (from D1)');
-                                                    addLog(`Telegram alert table sent (${domainsForAlert.length} domains from D1)`, 'success');
+                                                // Group domains by custom chat ID
+                                                const domainsByChatId = new Map<string, typeof domainsForAlert>();
+                                                
+                                                // Add all domains to default chat (summary)
+                                                if (currentSettings.telegramChatId) {
+                                                    domainsByChatId.set(currentSettings.telegramChatId, domainsForAlert);
+                                                    console.log(`🔔 [Frontend Alert] Added ${domainsForAlert.length} domains to default chat (${currentSettings.telegramChatId}) for summary`);
+                                                }
+                                                
+                                                // Add domains with custom chat ID to their specific chats
+                                                domainsForAlert.forEach(domain => {
+                                                    if (domain.telegramChatId && domain.telegramChatId !== currentSettings.telegramChatId) {
+                                                        if (!domainsByChatId.has(domain.telegramChatId)) {
+                                                            domainsByChatId.set(domain.telegramChatId, []);
+                                                        }
+                                                        domainsByChatId.get(domain.telegramChatId)!.push(domain);
+                                                        console.log(`🔔 [Frontend Alert] Added domain ${domain.hostname} to custom chat (${domain.telegramChatId})`);
+                                                    }
+                                                });
+                                                
+                                                // Send alerts to each chat ID
+                                                let successCount = 0;
+                                                let failCount = 0;
+                                                
+                                                for (const [chatId, domains] of domainsByChatId.entries()) {
+                                                    try {
+                                                        const sent = await sendTelegramAlertTable(
+                                                            currentSettings.telegramBotToken,
+                                                            chatId,
+                                                            domains
+                                                        );
+                                                        
+                                                        if (sent) {
+                                                            successCount++;
+                                                            console.log(`🔔 [Frontend Alert] ✅ Telegram alert sent to chat ${chatId} (${domains.length} domains)`);
+                                                        } else {
+                                                            failCount++;
+                                                            console.error(`🔔 [Frontend Alert] ❌ Failed to send to chat ${chatId}`);
+                                                        }
+                                                    } catch (error) {
+                                                        failCount++;
+                                                        console.error(`🔔 [Frontend Alert] ❌ Error sending to chat ${chatId}:`, error);
+                                                    }
+                                                }
+                                                
+                                                if (successCount > 0) {
+                                                    console.log(`🔔 [Frontend Alert] ✅ Sent ${successCount} alert(s) successfully (from D1)`);
+                                                    addLog(`Telegram alerts sent: ${successCount} success, ${failCount} failed`, successCount === domainsByChatId.size ? 'success' : 'info');
                                                 } else {
-                                                    console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table');
-                                                    addLog('Failed to send Telegram alert table', 'error');
+                                                    console.error('🔔 [Frontend Alert] ❌ All alerts failed');
+                                                    addLog('Failed to send all Telegram alerts', 'error');
                                                 }
                                             } catch (error) {
                                                 console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
@@ -2017,12 +2093,12 @@ export default function Home() {
             addLog('Mobile app integration requires Workers URL to be configured.', 'error');
             setLoading(false);
         }
-    }, [loading, checkSingleDomain, addLog]);
+  }, [loading, checkSingleDomain, addLog]);
 
-    // Scheduler
-    useEffect(() => {
-        if (!loadedRef.current || domains.length === 0) return;
-
+  // Scheduler
+  useEffect(() => {
+    if (!loadedRef.current || domains.length === 0) return;
+    
         // Skip auto-scan if KV limit is exceeded (but we're using D1 now, so this should not happen)
         // Note: D1 doesn't have write limits like KV, so this check is mainly for backward compatibility
         // Reset KV limit check since we're using D1 now
@@ -2036,10 +2112,10 @@ export default function Home() {
         // Removed: Auto-trigger scan on mount
         // Now we just load existing results from Workers API (D1) instead of triggering a new scan
         // Users can manually trigger a scan using the "RUN FULL SCAN" button if needed
-    }, [loading, settings.checkInterval, domains.length]); // Dependencies
+  }, [loading, settings.checkInterval, domains.length]); // Dependencies
 
     // Shared auto-scan timer (sync with Workers API to avoid duplicate triggers)
-    useEffect(() => {
+  useEffect(() => {
         if (!loadedRef.current || settings.checkInterval <= 0) {
             setNextScanTime(null);
             return;
@@ -2052,12 +2128,12 @@ export default function Home() {
             const intervalMs = settings.checkInterval * 60 * 1000;
             const nextScan = Date.now() + intervalMs;
             setNextScanTime(nextScan);
-            const intervalId = setInterval(() => {
-                addLog('Auto-scan interval reached', 'info');
-                runAllChecks();
+    const intervalId = setInterval(() => {
+        addLog('Auto-scan interval reached', 'info');
+        runAllChecks();
                 setNextScanTime(Date.now() + intervalMs);
             }, intervalMs);
-            return () => clearInterval(intervalId);
+    return () => clearInterval(intervalId);
         }
 
         let isChecking = false; // Prevent concurrent checks
@@ -2104,12 +2180,12 @@ export default function Home() {
         // Check every 10 seconds if it's time to scan
         const checkInterval = setInterval(async () => {
             if (isChecking) return; // Prevent concurrent checks
-
+            
             // Use ref value to avoid dependency on state
             const currentNextScan = nextScanTimeRef.current;
             if (currentNextScan && Date.now() >= currentNextScan) {
                 isChecking = true;
-
+                
                 // Time to scan - check if someone else already triggered
                 try {
                     const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
@@ -2131,12 +2207,12 @@ export default function Home() {
                 // Trigger scan and update next scan time in D1 (shared storage)
                 addLog('Auto-scan interval reached', 'info');
                 await runAllChecks();
-
+                
                 // Use ref to get current checkInterval (avoid dependency)
                 const currentInterval = settingsRef.current.checkInterval;
                 const intervalMs = currentInterval * 60 * 1000;
                 const nextScan = Date.now() + intervalMs;
-
+                
                 // Save to Workers API (D1) - this is the ONLY place we write nextScanTime
                 try {
                     const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
@@ -2164,7 +2240,7 @@ export default function Home() {
                     nextScanTimeRef.current = nextScan;
                     setNextScanTime(nextScan);
                 }
-
+                
                 isChecking = false;
             }
         }, 10000); // Check every 10 seconds
@@ -2189,35 +2265,35 @@ export default function Home() {
         return null; // Will redirect via useEffect
     }
 
-    return (
-        <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
-            <header className="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
-                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
-                    <div className="flex items-center mb-4 md:mb-0">
-                        <div className="w-10 h-10 bg-neon-blue/10 rounded-full flex items-center justify-center mr-3 border border-neon-blue shadow-[0_0_15px_rgba(0,243,255,0.3)]">
-                            <Shield className="w-6 h-6 text-neon-blue" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold text-white tracking-wider">SENTINEL <span className="text-neon-blue">DNS</span></h1>
-                            <p className="text-xs text-gray-500 font-mono">CLOUD EDGE MONITOR</p>
-                        </div>
-                    </div>
+  return (
+    <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
+      <header className="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
+            <div className="flex items-center mb-4 md:mb-0">
+                <div className="w-10 h-10 bg-neon-blue/10 rounded-full flex items-center justify-center mr-3 border border-neon-blue shadow-[0_0_15px_rgba(0,243,255,0.3)]">
+                    <Shield className="w-6 h-6 text-neon-blue" />
+                </div>
+                <div>
+                    <h1 className="text-2xl font-bold text-white tracking-wider">SENTINEL <span className="text-neon-blue">DNS</span></h1>
+                    <p className="text-xs text-gray-500 font-mono">CLOUD EDGE MONITOR</p>
+                </div>
+            </div>
 
                     <nav className="flex space-x-2 items-center">
                         <div className="flex space-x-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
-                            <button
-                                onClick={() => setActiveTab('dashboard')}
-                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                <Activity className="w-4 h-4 inline mr-2" />
-                                Dashboard
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('settings')}
-                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                <Terminal className="w-4 h-4 inline mr-2" />
-                                Settings
+                <button 
+                    onClick={() => setActiveTab('dashboard')}
+                    className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                >
+                    <Activity className="w-4 h-4 inline mr-2" />
+                    Dashboard
+                </button>
+                <button 
+                    onClick={() => setActiveTab('settings')}
+                    className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                >
+                    <Terminal className="w-4 h-4 inline mr-2" />
+                    Settings
                             </button>
                         </div>
                         <button
@@ -2248,78 +2324,78 @@ export default function Home() {
                         >
                             <LogOut className="w-4 h-4" />
                             <span>Logout</span>
-                        </button>
-                    </nav>
-                </div>
-            </header>
+                </button>
+            </nav>
+        </div>
+      </header>
 
-            <main className="max-w-7xl mx-auto p-4 md:p-6">
-                {activeTab === 'settings' ? (
-                    <div className="max-w-2xl mx-auto animate-fadeIn">
-                        <SettingsPanel settings={settings} onSave={setSettings} />
+      <main className="max-w-7xl mx-auto p-4 md:p-6">
+        {activeTab === 'settings' ? (
+            <div className="max-w-2xl mx-auto animate-fadeIn">
+                <SettingsPanel settings={settings} onSave={setSettings} />
+            </div>
+        ) : (
+            <div className="space-y-6 animate-fadeIn">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="col-span-2 space-y-4">
+                        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-lg">
+                            <form onSubmit={handleAddDomain} className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={newUrl}
+                                    onChange={(e) => setNewUrl(e.target.value)}
+                                    placeholder="https://example.com"
+                                    className="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-neon-blue focus:outline-none transition-colors"
+                                />
+                                <button type="submit" className="bg-neon-blue hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded flex items-center transition-colors">
+                                    <Plus className="w-5 h-5" />
+                                </button>
+                            </form>
+                        </div>
+
+                        <div className="space-y-4">
+                            {domains.map(domain => (
+                                <DomainCard 
+                                    key={domain.id} 
+                                    domain={domain} 
+                                    onDelete={handleDeleteDomain}
+                                    onRefresh={checkSingleDomain}
+                                    onUpdate={handleUpdateDomain}
+                                />
+                            ))}
+                            {domains.length === 0 && (
+                                <div className="text-center py-10 text-gray-500 border border-dashed border-gray-800 rounded-lg">
+                                    No domains monitored. Add one above.
+                                </div>
+                            )}
+                        </div>
                     </div>
-                ) : (
-                    <div className="space-y-6 animate-fadeIn">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="col-span-2 space-y-4">
-                                <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-lg">
-                                    <form onSubmit={handleAddDomain} className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newUrl}
-                                            onChange={(e) => setNewUrl(e.target.value)}
-                                            placeholder="https://example.com"
-                                            className="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-neon-blue focus:outline-none transition-colors"
-                                        />
-                                        <button type="submit" className="bg-neon-blue hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded flex items-center transition-colors">
-                                            <Plus className="w-5 h-5" />
-                                        </button>
-                                    </form>
-                                </div>
 
-                                <div className="space-y-4">
-                                    {domains.map(domain => (
-                                        <DomainCard
-                                            key={domain.id}
-                                            domain={domain}
-                                            onDelete={handleDeleteDomain}
-                                            onRefresh={checkSingleDomain}
-                                            onUpdate={handleUpdateDomain}
-                                        />
-                                    ))}
-                                    {domains.length === 0 && (
-                                        <div className="text-center py-10 text-gray-500 border border-dashed border-gray-800 rounded-lg">
-                                            No domains monitored. Add one above.
-                                        </div>
-                                    )}
-                                </div>
+                    <div className="space-y-4">
+                        <div className="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-lg">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">Status Control</h3>
+                                {loading && <Activity className="w-4 h-4 text-neon-blue animate-pulse" />}
                             </div>
-
-                            <div className="space-y-4">
-                                <div className="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-lg">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">Status Control</h3>
-                                        {loading && <Activity className="w-4 h-4 text-neon-blue animate-pulse" />}
-                                    </div>
-
-                                    <button
-                                        onClick={() => runAllChecks()}
-                                        disabled={loading || domains.length === 0}
+                            
+                            <button 
+                                onClick={() => runAllChecks()} 
+                                disabled={loading || domains.length === 0}
                                         className={`w-full py-4 rounded font-bold text-center mb-4 transition-all flex items-center justify-center ${loading
-                                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                            : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
-                                            }`}
-                                    >
-                                        {loading ? <span className="animate-pulse">SCANNING...</span> : <><Play className="w-4 h-4 mr-2 fill-current" /> RUN FULL SCAN</>}
-                                    </button>
-
-                                    <div className="space-y-3 pt-4 border-t border-gray-700">
+                                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                                    : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
+                                }`}
+                            >
+                                {loading ? <span className="animate-pulse">SCANNING...</span> : <><Play className="w-4 h-4 mr-2 fill-current" /> RUN FULL SCAN</>}
+                            </button>
+                            
+                            <div className="space-y-3 pt-4 border-t border-gray-700">
                                         <div className="flex justify-between text-xs items-center">
-                                            <span className="text-gray-400">Interval:</span>
-                                            <span className="text-neon-blue font-mono">
-                                                {settings.checkInterval >= 1440 ? `${(settings.checkInterval / 60).toFixed(0)} Hours` : `${settings.checkInterval} Mins`}
-                                            </span>
-                                        </div>
+                                    <span className="text-gray-400">Interval:</span>
+                                    <span className="text-neon-blue font-mono">
+                                        {settings.checkInterval >= 1440 ? `${(settings.checkInterval / 60).toFixed(0)} Hours` : `${settings.checkInterval} Mins`}
+                                    </span>
+                                </div>
                                         <div className="flex justify-between text-xs items-center">
                                             <span className="text-gray-400">Auto-Scan:</span>
                                             <button
@@ -2344,38 +2420,38 @@ export default function Home() {
                                             </button>
                                         </div>
                                         <div className="flex justify-between text-xs items-center">
-                                            <span className="text-gray-400">Next Auto-Scan:</span>
-                                            <span className="text-gray-200 font-mono flex items-center">
-                                                <Clock className="w-3 h-3 mr-1 text-gray-500" />
+                                    <span className="text-gray-400">Next Auto-Scan:</span>
+                                    <span className="text-gray-200 font-mono flex items-center">
+                                        <Clock className="w-3 h-3 mr-1 text-gray-500" />
                                                 {settings.checkInterval > 0 && nextScanTime
                                                     ? new Date(nextScanTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
                                                     : 'Paused'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-gray-900 p-4 rounded-lg border border-gray-800 h-[400px] flex flex-col shadow-inner">
-                                    <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center">
-                                        <Terminal className="w-4 h-4 mr-2" />
-                                        System Logs
-                                    </h3>
-                                    <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs custom-scrollbar pr-2">
-                                        {logs.map(log => (
-                                            <div key={log.id} className="border-b border-gray-800 pb-1 last:border-0">
-                                                <span className="text-gray-600 inline-block w-[70px]">
-                                                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                                </span>
-                                                <span className={`ml-2 ${log.type === 'error' ? 'text-red-500' :
-                                                    log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
-                                                        log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
-                                                    }`}>{log.message}</span>
-                                            </div>
-                                        ))}
-                                        {logs.length === 0 && <span className="text-gray-700 italic">Waiting for activity...</span>}
-                                    </div>
+                                    </span>
                                 </div>
                             </div>
+                        </div>
+
+                        <div className="bg-gray-900 p-4 rounded-lg border border-gray-800 h-[400px] flex flex-col shadow-inner">
+                            <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center">
+                                <Terminal className="w-4 h-4 mr-2" />
+                                System Logs
+                            </h3>
+                            <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs custom-scrollbar pr-2">
+                                {logs.map(log => (
+                                    <div key={log.id} className="border-b border-gray-800 pb-1 last:border-0">
+                                        <span className="text-gray-600 inline-block w-[70px]">
+                                                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                        </span>
+                                                <span className={`ml-2 ${log.type === 'error' ? 'text-red-500' :
+                                            log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
+                                            log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
+                                        }`}>{log.message}</span>
+                                    </div>
+                                ))}
+                                {logs.length === 0 && <span className="text-gray-700 italic">Waiting for activity...</span>}
+                            </div>
+                        </div>
+                    </div>
                         </div>
                     </div>
                 )}
