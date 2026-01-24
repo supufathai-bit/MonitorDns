@@ -125,9 +125,9 @@ export default {
 
             // Check and send alerts based on latest results in D1
             // Mobile app sends results to /api/mobile-sync, which saves to D1
-            // This cron job checks D1 every 10 minutes and sends alerts for blocked domains
+            // This cron job checks D1 every 10 minutes and sends alerts for all domains (both blocked and active)
             // BUT only sends if interval has passed (respects checkInterval from settings)
-            console.log('🔔 [Cron] Checking for blocked domains and sending alerts from D1 results...');
+            console.log('🔔 [Cron] Checking for all domains and sending alerts from D1 results (both blocked and active)...');
             await checkAndSendAlerts(env);
         } catch (error) {
             console.error('⏰ [Cron] Error in scheduled handler:', error);
@@ -2036,18 +2036,18 @@ async function handleSaveFrontendSettings(
     }
 }
 
-// Send Telegram alert table (รวมทุกโดเมน)
+// Send Telegram alert table (รวมทุกโดเมน - ทั้งที่บล็อกและไม่บล็อก)
 // ถ้าโดเมนเยอะเกิน Telegram limit (4096 chars) จะแยกส่งเป็นหลายข้อความ แต่ยังคงเป็นตารางรวม
 async function sendTelegramAlertTable(
     botToken: string,
     chatId: string,
-    blockedDomains: Array<{
+    allDomains: Array<{
         hostname: string;
         domainTelegramChatId: string | null;
         resultsByISP: Record<string, { status: string }>;
     }>
 ): Promise<boolean> {
-    if (!botToken || !chatId || blockedDomains.length === 0) return false;
+    if (!botToken || !chatId || allDomains.length === 0) return false;
 
     // Helper function to find ISP status
     const findISPStatus = (results: Record<string, { status: string }>, keys: string[]): string | null => {
@@ -2071,8 +2071,8 @@ async function sendTelegramAlertTable(
         return '❓';
     };
 
-    // สร้างตารางสำหรับโดเมนชุดหนึ่ง
-    const createTableForDomains = (domains: typeof blockedDomains, partNumber?: number, totalParts?: number): string => {
+    // สร้างตารางสำหรับโดเมนชุดหนึ่ง (รวมทุกโดเมน - ทั้งที่บล็อกและไม่บล็อก)
+    const createTableForDomains = (domains: typeof allDomains, partNumber?: number, totalParts?: number): string => {
         let table = '<pre>\n';
         table += 'Domain               | A   | T   | D\n';
         table += '---------------------+-----+-----+-----\n';
@@ -2112,8 +2112,8 @@ async function sendTelegramAlertTable(
     const headerFooterLength = 100; // ประมาณความยาว header + footer
     const rowLength = 50; // ประมาณความยาวแต่ละแถวในตาราง
 
-    // ลองสร้างข้อความทั้งหมดก่อน
-    const fullMessage = createTableForDomains(blockedDomains);
+    // ลองสร้างข้อความทั้งหมดก่อน (รวมทุกโดเมน - ทั้งที่บล็อกและไม่บล็อก)
+    const fullMessage = createTableForDomains(allDomains);
     
     // ถ้าข้อความไม่เกิน limit ส่งเลย
     if (fullMessage.length <= TELEGRAM_LIMIT) {
@@ -2123,7 +2123,7 @@ async function sendTelegramAlertTable(
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                },
+            },
                 body: JSON.stringify({
                     chat_id: chatId,
                     text: fullMessage,
@@ -2145,14 +2145,14 @@ async function sendTelegramAlertTable(
     // ถ้าเกิน limit แบ่งเป็นหลายข้อความ
     // คำนวณจำนวนโดเมนต่อข้อความ (ประมาณ)
     const domainsPerMessage = Math.floor((TELEGRAM_LIMIT - headerFooterLength) / rowLength);
-    const totalParts = Math.ceil(blockedDomains.length / domainsPerMessage);
+    const totalParts = Math.ceil(allDomains.length / domainsPerMessage);
 
     console.log(`🔔 [Alert] Message too long (${fullMessage.length} chars), splitting into ${totalParts} parts (${domainsPerMessage} domains per part)`);
 
-    // แบ่งโดเมนเป็นชุดๆ และส่งทีละชุด
+    // แบ่งโดเมนเป็นชุดๆ และส่งทีละชุด (รวมทุกโดเมน - ทั้งที่บล็อกและไม่บล็อก)
     let allSent = true;
-    for (let i = 0; i < blockedDomains.length; i += domainsPerMessage) {
-        const domainChunk = blockedDomains.slice(i, i + domainsPerMessage);
+    for (let i = 0; i < allDomains.length; i += domainsPerMessage) {
+        const domainChunk = allDomains.slice(i, i + domainsPerMessage);
         const partNumber = Math.floor(i / domainsPerMessage) + 1;
         const message = createTableForDomains(domainChunk, partNumber, totalParts);
 
@@ -2179,7 +2179,7 @@ async function sendTelegramAlertTable(
             }
 
             // รอ 100ms ระหว่างข้อความเพื่อไม่ให้ Telegram rate limit
-            if (i + domainsPerMessage < blockedDomains.length) {
+            if (i + domainsPerMessage < allDomains.length) {
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
         } catch (error) {
@@ -2191,10 +2191,10 @@ async function sendTelegramAlertTable(
     return allSent;
 }
 
-// Check and send alerts for blocked domains
+// Check and send alerts for all domains (both blocked and active)
 async function checkAndSendAlerts(env: Env): Promise<void> {
     try {
-        console.log('🔔 [Alert] Checking for blocked domains and sending alerts...');
+        console.log('🔔 [Alert] Checking for all domains and sending alerts (both blocked and active)...');
 
         // Get settings from D1
         const settingsResult = await env.DB.prepare(
