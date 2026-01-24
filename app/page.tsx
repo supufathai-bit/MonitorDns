@@ -1313,6 +1313,7 @@ export default function Home() {
                 const pollForResults = async (): Promise<void> => {
                     attempts++;
                     addLog(`Polling for results... (${attempts}/${maxAttempts})`, 'info');
+                    console.log('🔔 [Frontend Alert] pollForResults called, attempt:', attempts);
 
                     try {
                         const response = await fetchResultsFromWorkers(workersUrl);
@@ -1321,8 +1322,10 @@ export default function Home() {
                             // Check if results are newer than trigger time
                             const latestResult = Math.max(...response.results.map(r => r.timestamp));
                             console.log('Latest result timestamp:', latestResult, 'Trigger timestamp:', triggerTimestamp);
+                            console.log('🔔 [Frontend Alert] Results found, checking timestamp...');
 
                             if (latestResult >= triggerTimestamp) {
+                                console.log('🔔 [Frontend Alert] ✅ Timestamp check passed, processing results...');
                                 addLog(`Loaded ${response.results.length} results from mobile app`, 'success');
 
                                 // Group results by hostname (normalize for matching)
@@ -1573,12 +1576,12 @@ export default function Home() {
                                     botTokenLength: currentSettings.telegramBotToken?.length || 0,
                                     chatId: currentSettings.telegramChatId || 'N/A'
                                 });
-                                
+
                                 if (currentSettings.telegramBotToken && currentSettings.telegramChatId && updatedDomainsForAlert.length > 0) {
                                     try {
                                         console.log(`🔔 [Frontend Alert] Sending alert table with ${updatedDomainsForAlert.length} domains`);
                                         addLog(`Sending Telegram alert table (${updatedDomainsForAlert.length} domains)...`, 'info');
-                                        
+
                                         // Send combined table alert to default chat
                                         const sent = await sendTelegramAlertTable(
                                             currentSettings.telegramBotToken,
@@ -1602,7 +1605,7 @@ export default function Home() {
                                     if (!currentSettings.telegramBotToken) missingItems.push('Bot Token');
                                     if (!currentSettings.telegramChatId) missingItems.push('Chat ID');
                                     if (updatedDomainsForAlert.length === 0) missingItems.push('Domains (empty)');
-                                    
+
                                     console.warn('🔔 [Frontend Alert] ⚠️ Skipping alert - missing:', missingItems.join(', '));
                                     addLog(`Skipping Telegram alert - missing: ${missingItems.join(', ')}`, 'info');
                                 }
