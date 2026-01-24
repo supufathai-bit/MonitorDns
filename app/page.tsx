@@ -1564,7 +1564,7 @@ export default function Home() {
                                 // Fetch latest results from D1 to ensure we use the most up-to-date data
                                 setTimeout(async () => {
                                     const currentSettings = settingsRef.current;
-                                    
+
                                     // Fetch latest results from D1 to ensure we use the most up-to-date data
                                     let domainsForAlert = domainsRef.current;
                                     try {
@@ -1574,11 +1574,23 @@ export default function Home() {
                                         if (d1Response.success && d1Response.results.length > 0) {
                                             console.log(`🔔 [Frontend Alert] Loaded ${d1Response.results.length} results from D1`);
                                             
+                                            // Debug: Log ISP names in D1 results
+                                            const ispNamesInD1 = [...new Set(d1Response.results.map(r => r.isp_name))];
+                                            console.log('🔔 [Frontend Alert] ISP names in D1:', ispNamesInD1);
+                                            
+                                            // Debug: Count results by ISP
+                                            const resultsByISP = new Map<string, number>();
+                                            d1Response.results.forEach(r => {
+                                                const count = resultsByISP.get(r.isp_name) || 0;
+                                                resultsByISP.set(r.isp_name, count + 1);
+                                            });
+                                            console.log('🔔 [Frontend Alert] Results count by ISP:', Object.fromEntries(resultsByISP));
+
                                             // Normalize hostname for matching
                                             const normalizeHostname = (hostname: string): string => {
                                                 return hostname.toLowerCase().replace(/^www\./, '');
                                             };
-                                            
+
                                             // Group results by normalized hostname
                                             const resultsByHostname = new Map<string, typeof d1Response.results>();
                                             d1Response.results.forEach(result => {
@@ -1588,16 +1600,16 @@ export default function Home() {
                                                 }
                                                 resultsByHostname.get(normalized)!.push(result);
                                             });
-                                            
+
                                             // Update domains with latest results from D1
                                             domainsForAlert = domainsRef.current.map(domain => {
                                                 const normalizedDomainHostname = normalizeHostname(domain.hostname);
                                                 const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
-                                                
+
                                                 if (!hostnameResults || hostnameResults.length === 0) {
                                                     return domain;
                                                 }
-                                                
+
                                                 // Map ISP names
                                                 const ispMap: Record<string, ISP> = {
                                                     'Unknown': ISP.AIS,
@@ -1613,13 +1625,13 @@ export default function Home() {
                                                     'Global (Google)': ISP.GLOBAL,
                                                     'Global': ISP.GLOBAL,
                                                 };
-                                                
+
                                                 // Group results by mapped ISP and get best result for each ISP
                                                 const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
                                                 hostnameResults.forEach(workerResult => {
                                                     const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
                                                     const existing = resultsByMappedISP.get(mappedISP);
-                                                    
+
                                                     if (!existing) {
                                                         resultsByMappedISP.set(mappedISP, workerResult);
                                                     } else {
@@ -1631,7 +1643,7 @@ export default function Home() {
                                                         } else {
                                                             const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
                                                             const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
-                                                            
+
                                                             if (!newIsUnknown && existingIsUnknown) {
                                                                 resultsByMappedISP.set(mappedISP, workerResult);
                                                             } else if (!newIsUnknown && !existingIsUnknown) {
@@ -1644,14 +1656,14 @@ export default function Home() {
                                                         }
                                                     }
                                                 });
-                                                
+
                                                 // Convert Workers results to ISPResult format
                                                 const updatedResults = { ...domain.results };
                                                 resultsByMappedISP.forEach((workerResult, isp) => {
                                                     const ispName = workerResult.isp_name;
                                                     const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
                                                         ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
-                                                    
+
                                                     if (isTrueOrDTAC) {
                                                         const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
                                                         slots.forEach(slotKey => {
@@ -1683,16 +1695,16 @@ export default function Home() {
                                                         }
                                                     }
                                                 });
-                                                
+
                                                 const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
-                                                
+
                                                 return {
                                                     ...domain,
                                                     results: updatedResults,
                                                     lastCheck: latestTimestamp,
                                                 };
                                             });
-                                            
+
                                             console.log(`🔔 [Frontend Alert] Updated ${domainsForAlert.length} domains with latest results from D1`);
                                         } else {
                                             console.log('🔔 [Frontend Alert] No results in D1, using current domains state');
@@ -1701,7 +1713,7 @@ export default function Home() {
                                         console.warn('🔔 [Frontend Alert] Failed to fetch from D1, using current domains state:', d1Error);
                                         // Use current domains state if D1 fetch fails
                                     }
-                                    
+
                                     console.log('🔔 [Frontend Alert] Checking conditions:', {
                                         hasBotToken: !!currentSettings.telegramBotToken,
                                         hasChatId: !!currentSettings.telegramChatId,
@@ -1795,19 +1807,19 @@ export default function Home() {
                         } else {
                             addLog('⏱️ Timeout: Mobile app did not respond within 30 seconds.', 'error');
                             addLog('📱 Using latest results from D1 instead...', 'info');
-                            
+
                             // Load latest results from D1 when mobile app timeout
                             try {
                                 const d1Response = await fetchResultsFromWorkers(workersUrl);
-                                
+
                                 if (d1Response.success && d1Response.results.length > 0) {
                                     addLog(`Loaded ${d1Response.results.length} results from D1 (mobile app timeout)`, 'success');
-                                    
+
                                     // Normalize hostname for matching
                                     const normalizeHostname = (hostname: string): string => {
                                         return hostname.toLowerCase().replace(/^www\./, '');
                                     };
-                                    
+
                                     // Group results by normalized hostname
                                     const resultsByHostname = new Map<string, typeof d1Response.results>();
                                     d1Response.results.forEach(result => {
@@ -1817,16 +1829,16 @@ export default function Home() {
                                         }
                                         resultsByHostname.get(normalized)!.push(result);
                                     });
-                                    
+
                                     // Update domains with results from D1
                                     setDomains(prev => prev.map(domain => {
                                         const normalizedDomainHostname = normalizeHostname(domain.hostname);
                                         const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
-                                        
+
                                         if (!hostnameResults || hostnameResults.length === 0) {
                                             return domain;
                                         }
-                                        
+
                                         // Map ISP names
                                         const ispMap: Record<string, ISP> = {
                                             'Unknown': ISP.AIS,
@@ -1842,13 +1854,13 @@ export default function Home() {
                                             'Global (Google)': ISP.GLOBAL,
                                             'Global': ISP.GLOBAL,
                                         };
-                                        
+
                                         // Group results by mapped ISP and get best result for each ISP
                                         const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
                                         hostnameResults.forEach(workerResult => {
                                             const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
                                             const existing = resultsByMappedISP.get(mappedISP);
-                                            
+
                                             if (!existing) {
                                                 resultsByMappedISP.set(mappedISP, workerResult);
                                             } else {
@@ -1860,7 +1872,7 @@ export default function Home() {
                                                 } else {
                                                     const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
                                                     const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
-                                                    
+
                                                     if (!newIsUnknown && existingIsUnknown) {
                                                         resultsByMappedISP.set(mappedISP, workerResult);
                                                     } else if (!newIsUnknown && !existingIsUnknown) {
@@ -1873,14 +1885,14 @@ export default function Home() {
                                                 }
                                             }
                                         });
-                                        
+
                                         // Convert Workers results to ISPResult format
                                         const updatedResults = { ...domain.results };
                                         resultsByMappedISP.forEach((workerResult, isp) => {
                                             const ispName = workerResult.isp_name;
                                             const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
                                                 ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
-                                            
+
                                             if (isTrueOrDTAC) {
                                                 const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
                                                 slots.forEach(slotKey => {
@@ -1912,16 +1924,16 @@ export default function Home() {
                                                 }
                                             }
                                         });
-                                        
+
                                         const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
-                                        
+
                                         return {
                                             ...domain,
                                             results: updatedResults,
                                             lastCheck: latestTimestamp,
                                         };
                                     }));
-                                    
+
                                     // Send Telegram alert with results from D1
                                     const currentSettings = settingsRef.current;
                                     if (currentSettings.telegramBotToken && currentSettings.telegramChatId) {
@@ -1930,13 +1942,13 @@ export default function Home() {
                                             try {
                                                 console.log(`🔔 [Frontend Alert] Sending alert table with ${domainsForAlert.length} domains (from D1 after timeout)`);
                                                 addLog(`Sending Telegram alert table (${domainsForAlert.length} domains from D1)...`, 'info');
-                                                
+
                                                 const sent = await sendTelegramAlertTable(
                                                     currentSettings.telegramBotToken,
                                                     currentSettings.telegramChatId,
                                                     domainsForAlert
                                                 );
-                                                
+
                                                 if (sent) {
                                                     console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully (from D1)');
                                                     addLog(`Telegram alert table sent (${domainsForAlert.length} domains from D1)`, 'success');
@@ -1957,7 +1969,7 @@ export default function Home() {
                                 console.error('Error loading results from D1 after timeout:', d1Error);
                                 addLog('Failed to load results from D1', 'error');
                             }
-                            
+
                             setLoading(false);
                         }
                     } catch (error) {

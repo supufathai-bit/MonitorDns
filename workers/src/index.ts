@@ -301,7 +301,11 @@ async function handleMobileSync(
                     let ispName = result.isp_name;
                     if (!ispName || ispName === 'Unknown' || ispName === 'unknown') {
                         ispName = device_info?.isp || 'Unknown';
+                        console.log(`Mobile sync: Using device_info.isp "${device_info?.isp}" for result (original isp_name was "${result.isp_name}")`);
                     }
+                    
+                    // Debug: Log ISP names being saved
+                    console.log(`Mobile sync: Saving result for ${result.hostname} with ISP: ${ispName}, status: ${result.status}, ip: ${result.ip || 'none'}`);
 
                     // Determine status based on IP address:
                     // - If IP exists = ACTIVE (DNS resolution successful)
