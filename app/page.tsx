@@ -1252,9 +1252,11 @@ export default function Home() {
         if (loading) return;
         setLoading(true);
         addLog('Starting full scan...', 'info');
+        console.log('🔔 [Frontend Alert] runAllChecks called');
 
         const currentSettings = settingsRef.current;
         const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || currentSettings.workersUrl || currentSettings.backendUrl;
+        console.log('🔔 [Frontend Alert] Workers URL:', workersUrl);
 
         if (workersUrl) {
             // Trigger mobile app to check DNS
