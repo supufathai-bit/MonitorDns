@@ -1355,138 +1355,121 @@ export default function Home() {
                                 // Update domains with results and collect updated domains for alert
                                 let updatedDomainsForAlert: Domain[] = [];
 
-                                setDomains(prev => {
-                                    const updated = prev.map(domain => {
-                                        const normalizedDomainHostname = normalizeHostname(domain.hostname);
-                                        const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
+                                // First, collect all updated domains synchronously
+                                const updatedDomains = domainsRef.current.map(domain => {
+                                    const normalizedDomainHostname = normalizeHostname(domain.hostname);
+                                    const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
 
-                                        if (!hostnameResults || hostnameResults.length === 0) {
-                                            console.log(`⚠️ No results for ${domain.hostname} (normalized: ${normalizedDomainHostname})`);
-                                            console.log(`   Available normalized hostnames:`, Array.from(resultsByHostname.keys()));
+                                    if (!hostnameResults || hostnameResults.length === 0) {
+                                        console.log(`⚠️ No results for ${domain.hostname} (normalized: ${normalizedDomainHostname})`);
+                                        console.log(`   Available normalized hostnames:`, Array.from(resultsByHostname.keys()));
 
-                                            // If no results, change PENDING to ERROR to stop loading spinner
-                                            const updatedResults = { ...domain.results };
-                                            Object.keys(updatedResults).forEach(ispKey => {
-                                                if (updatedResults[ispKey as ISP].status === Status.PENDING) {
-                                                    updatedResults[ispKey as ISP] = {
-                                                        ...updatedResults[ispKey as ISP],
-                                                        status: Status.ERROR,
-                                                        details: 'No results from mobile app'
-                                                    };
-                                                }
-                                            });
-                                            return { ...domain, results: updatedResults };
-                                        }
+                                        // If no results, change PENDING to ERROR to stop loading spinner
+                                        const updatedResults = { ...domain.results };
+                                        Object.keys(updatedResults).forEach(ispKey => {
+                                            if (updatedResults[ispKey as ISP].status === Status.PENDING) {
+                                                updatedResults[ispKey as ISP] = {
+                                                    ...updatedResults[ispKey as ISP],
+                                                    status: Status.ERROR,
+                                                    details: 'No results from mobile app'
+                                                };
+                                            }
+                                        });
+                                        return { ...domain, results: updatedResults };
+                                    }
 
-                                        console.log(`✅ Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
+                                    console.log(`✅ Found ${hostnameResults.length} results for ${domain.hostname}:`, hostnameResults.map(r => `${r.isp_name}:${r.status}`));
 
-                                        // Map ISP names and group by mapped ISP, then use latest result for each ISP
-                                        // Note: True and DTAC use the same network (True Corporation), so they map to the same ISP
-                                        const ispMap: Record<string, ISP> = {
-                                            'Unknown': ISP.AIS,
-                                            'unknown': ISP.AIS,
-                                            'AIS': ISP.AIS,
-                                            'True': ISP.TRUE,      // True maps to True/DTAC
-                                            'TRUE': ISP.TRUE,
-                                            'true': ISP.TRUE,
-                                            'DTAC': ISP.TRUE,      // DTAC maps to True/DTAC (same network)
-                                            'dtac': ISP.TRUE,
-                                            'NT': ISP.NT,
-                                            'nt': ISP.NT,
-                                            'Global (Google)': ISP.GLOBAL,
-                                            'Global': ISP.GLOBAL,
-                                        };
+                                    // Map ISP names and group by mapped ISP, then use latest result for each ISP
+                                    // Note: True and DTAC use the same network (True Corporation), so they map to the same ISP
+                                    const ispMap: Record<string, ISP> = {
+                                        'Unknown': ISP.AIS,
+                                        'unknown': ISP.AIS,
+                                        'AIS': ISP.AIS,
+                                        'True': ISP.TRUE,      // True maps to True/DTAC
+                                        'TRUE': ISP.TRUE,
+                                        'true': ISP.TRUE,
+                                        'DTAC': ISP.TRUE,      // DTAC maps to True/DTAC (same network)
+                                        'dtac': ISP.TRUE,
+                                        'NT': ISP.NT,
+                                        'nt': ISP.NT,
+                                        'Global (Google)': ISP.GLOBAL,
+                                        'Global': ISP.GLOBAL,
+                                    };
 
-                                        // Group results by mapped ISP and get best result for each ISP
-                                        // Priority: 1) BLOCKED status (always prefer), 2) ISP name clarity (AIS > Unknown), 3) Latest timestamp
-                                        const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
-                                        hostnameResults.forEach(workerResult => {
-                                            const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
-                                            const existing = resultsByMappedISP.get(mappedISP);
+                                    // Group results by mapped ISP and get best result for each ISP
+                                    // Priority: 1) BLOCKED status (always prefer), 2) ISP name clarity (AIS > Unknown), 3) Latest timestamp
+                                    const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
+                                    hostnameResults.forEach(workerResult => {
+                                        const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
+                                        const existing = resultsByMappedISP.get(mappedISP);
 
-                                            console.log(`🔍 [pollForResults] Processing: ${workerResult.isp_name} -> ${mappedISP}, status: ${workerResult.status}, timestamp: ${workerResult.timestamp}`);
+                                        console.log(`🔍 [pollForResults] Processing: ${workerResult.isp_name} -> ${mappedISP}, status: ${workerResult.status}, timestamp: ${workerResult.timestamp}`);
 
-                                            if (!existing) {
-                                                console.log(`  ✅ First result for ${mappedISP}, setting: ${workerResult.isp_name}:${workerResult.status}`);
+                                        if (!existing) {
+                                            console.log(`  ✅ First result for ${mappedISP}, setting: ${workerResult.isp_name}:${workerResult.status}`);
+                                            resultsByMappedISP.set(mappedISP, workerResult);
+                                        } else {
+                                            console.log(`  🔄 Comparing with existing: ${existing.isp_name}:${existing.status} (timestamp: ${existing.timestamp})`);
+
+                                            // Priority rules (in order):
+                                            // 1. Always prefer BLOCKED over ACTIVE (BLOCKED is more accurate)
+                                            if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
+                                                console.log(`  ✅ Preferring BLOCKED over ACTIVE: ${workerResult.isp_name}:${workerResult.status}`);
                                                 resultsByMappedISP.set(mappedISP, workerResult);
+                                            } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
+                                                console.log(`  ⏭️ Keeping existing BLOCKED: ${existing.isp_name}:${existing.status}`);
+                                                // Keep existing BLOCKED - don't override with ACTIVE
                                             } else {
-                                                console.log(`  🔄 Comparing with existing: ${existing.isp_name}:${existing.status} (timestamp: ${existing.timestamp})`);
+                                                // Both have same status (both ACTIVE or both BLOCKED)
+                                                // 2. Prefer ISP name clarity (AIS > Unknown)
+                                                const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
+                                                const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
 
-                                                // Priority rules (in order):
-                                                // 1. Always prefer BLOCKED over ACTIVE (BLOCKED is more accurate)
-                                                if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
-                                                    console.log(`  ✅ Preferring BLOCKED over ACTIVE: ${workerResult.isp_name}:${workerResult.status}`);
+                                                if (!newIsUnknown && existingIsUnknown) {
+                                                    console.log(`  ✅ Preferring clear ISP name: ${workerResult.isp_name} > ${existing.isp_name}`);
+                                                    // New result has clear ISP name, existing is Unknown
                                                     resultsByMappedISP.set(mappedISP, workerResult);
-                                                } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
-                                                    console.log(`  ⏭️ Keeping existing BLOCKED: ${existing.isp_name}:${existing.status}`);
-                                                    // Keep existing BLOCKED - don't override with ACTIVE
+                                                } else if (newIsUnknown && !existingIsUnknown) {
+                                                    console.log(`  ⏭️ Keeping existing clear ISP name: ${existing.isp_name}`);
+                                                    // Keep existing clear ISP name
                                                 } else {
-                                                    // Both have same status (both ACTIVE or both BLOCKED)
-                                                    // 2. Prefer ISP name clarity (AIS > Unknown)
-                                                    const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
-                                                    const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
-
-                                                    if (!newIsUnknown && existingIsUnknown) {
-                                                        console.log(`  ✅ Preferring clear ISP name: ${workerResult.isp_name} > ${existing.isp_name}`);
-                                                        // New result has clear ISP name, existing is Unknown
+                                                    // Both have same clarity, use latest timestamp
+                                                    const existingTimestamp = existing.timestamp || 0;
+                                                    const newTimestamp = workerResult.timestamp || 0;
+                                                    if (newTimestamp > existingTimestamp) {
+                                                        console.log(`  ✅ Using newer timestamp: ${newTimestamp} > ${existingTimestamp}`);
                                                         resultsByMappedISP.set(mappedISP, workerResult);
-                                                    } else if (newIsUnknown && !existingIsUnknown) {
-                                                        console.log(`  ⏭️ Keeping existing clear ISP name: ${existing.isp_name}`);
-                                                        // Keep existing clear ISP name
                                                     } else {
-                                                        // Both have same clarity, use latest timestamp
-                                                        const existingTimestamp = existing.timestamp || 0;
-                                                        const newTimestamp = workerResult.timestamp || 0;
-                                                        if (newTimestamp > existingTimestamp) {
-                                                            console.log(`  ✅ Using newer timestamp: ${newTimestamp} > ${existingTimestamp}`);
-                                                            resultsByMappedISP.set(mappedISP, workerResult);
-                                                        } else {
-                                                            console.log(`  ⏭️ Keeping existing (newer timestamp): ${existingTimestamp} > ${newTimestamp}`);
-                                                        }
+                                                        console.log(`  ⏭️ Keeping existing (newer timestamp): ${existingTimestamp} > ${newTimestamp}`);
                                                     }
                                                 }
                                             }
-                                        });
+                                        }
+                                    });
 
-                                        console.log(`📅 [pollForResults] Latest results by ISP:`, Array.from(resultsByMappedISP.entries()).map(([isp, r]) => `${isp}:${r.isp_name}:${r.status} (${r.timestamp})`));
+                                    console.log(`📅 [pollForResults] Latest results by ISP:`, Array.from(resultsByMappedISP.entries()).map(([isp, r]) => `${isp}:${r.isp_name}:${r.status} (${r.timestamp})`));
 
-                                        // Convert Workers results to ISPResult format
-                                        const updatedResults = { ...domain.results };
-                                        resultsByMappedISP.forEach((workerResult, isp) => {
-                                            const ispName = workerResult.isp_name;
-                                            console.log(`🔄 [pollForResults] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                    // Convert Workers results to ISPResult format
+                                    const updatedResults = { ...domain.results };
+                                    resultsByMappedISP.forEach((workerResult, isp) => {
+                                        const ispName = workerResult.isp_name;
+                                        console.log(`🔄 [pollForResults] Using latest result for ${isp}: ${ispName} -> ${isp}, status: ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
 
-                                            // If result is for True/DTAC (mapped from True or DTAC), update both TRUE and DTAC slots (they share the same network)
-                                            const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
-                                                ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
+                                        // If result is for True/DTAC (mapped from True or DTAC), update both TRUE and DTAC slots (they share the same network)
+                                        const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
+                                            ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
 
-                                            if (isTrueOrDTAC) {
-                                                // Update both 'True' and 'DTAC' string keys, and enum keys
-                                                const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
-                                                slots.forEach(slotKey => {
-                                                    if (updatedResults[slotKey]) {
-                                                        const existingResult = updatedResults[slotKey];
-                                                        const targetISP = slotKey === 'True' ? ISP.TRUE : slotKey === 'DTAC' ? ISP.DTAC : slotKey;
-                                                        console.log(`✅ [pollForResults] Updating ${slotKey} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
-                                                        updatedResults[slotKey] = {
-                                                            isp: targetISP,
-                                                            status: workerResult.status as Status,
-                                                            ip: workerResult.ip || '',
-                                                            latency: workerResult.latency || 0,
-                                                            details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
-                                                            source: 'mobile-app',
-                                                            deviceId: workerResult.device_id,
-                                                            timestamp: workerResult.timestamp,
-                                                        };
-                                                    }
-                                                });
-                                            } else {
-                                                // For other ISPs, update normally
-                                                if (updatedResults[isp]) {
-                                                    const existingResult = updatedResults[isp];
-                                                    console.log(`✅ [pollForResults] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
-                                                    updatedResults[isp] = {
-                                                        isp: isp,
+                                        if (isTrueOrDTAC) {
+                                            // Update both 'True' and 'DTAC' string keys, and enum keys
+                                            const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
+                                            slots.forEach(slotKey => {
+                                                if (updatedResults[slotKey]) {
+                                                    const existingResult = updatedResults[slotKey];
+                                                    const targetISP = slotKey === 'True' ? ISP.TRUE : slotKey === 'DTAC' ? ISP.DTAC : slotKey;
+                                                    console.log(`✅ [pollForResults] Updating ${slotKey} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                                    updatedResults[slotKey] = {
+                                                        isp: targetISP,
                                                         status: workerResult.status as Status,
                                                         ip: workerResult.ip || '',
                                                         latency: workerResult.latency || 0,
@@ -1495,565 +1478,587 @@ export default function Home() {
                                                         deviceId: workerResult.device_id,
                                                         timestamp: workerResult.timestamp,
                                                     };
-                                                } else {
-                                                    console.warn(`⚠️ [pollForResults] No result slot for ISP: ${isp} (mapped from ${ispName})`);
                                                 }
-                                            }
-                                        });
-
-                                        // Change remaining PENDING to ERROR if no results for that ISP
-                                        Object.keys(updatedResults).forEach(ispKey => {
-                                            const isp = ispKey as ISP;
-                                            if (updatedResults[isp].status === Status.PENDING) {
-                                                // Check if any result maps to this ISP
-                                                // Note: True and DTAC use the same network (True Corporation), so they map to the same ISP
-                                                const ispMap: Record<string, ISP> = {
-                                                    'Unknown': ISP.AIS,
-                                                    'unknown': ISP.AIS,
-                                                    'AIS': ISP.AIS,
-                                                    'True': ISP.TRUE,      // True maps to True/DTAC
-                                                    'TRUE': ISP.TRUE,
-                                                    'true': ISP.TRUE,
-                                                    'DTAC': ISP.TRUE,      // DTAC maps to True/DTAC (same network)
-                                                    'dtac': ISP.TRUE,
-                                                    'NT': ISP.NT,
-                                                    'nt': ISP.NT,
-                                                    'Global (Google)': ISP.GLOBAL,
-                                                    'Global': ISP.GLOBAL,
+                                            });
+                                        } else {
+                                            // For other ISPs, update normally
+                                            if (updatedResults[isp]) {
+                                                const existingResult = updatedResults[isp];
+                                                console.log(`✅ [pollForResults] Updating ${isp} result: ${existingResult.status} -> ${workerResult.status} (timestamp: ${workerResult.timestamp})`);
+                                                updatedResults[isp] = {
+                                                    isp: isp,
+                                                    status: workerResult.status as Status,
+                                                    ip: workerResult.ip || '',
+                                                    latency: workerResult.latency || 0,
+                                                    details: `From mobile app (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                    source: 'mobile-app',
+                                                    deviceId: workerResult.device_id,
+                                                    timestamp: workerResult.timestamp,
                                                 };
-                                                const hasResult = hostnameResults.some(r => {
-                                                    const mappedIsp = ispMap[r.isp_name] || ISP.AIS;
-                                                    return mappedIsp === isp;
-                                                });
-                                                if (!hasResult) {
-                                                    updatedResults[isp] = {
-                                                        ...updatedResults[isp],
-                                                        status: Status.ERROR,
-                                                        details: 'No result from mobile app for this ISP'
-                                                    };
-                                                }
+                                            } else {
+                                                console.warn(`⚠️ [pollForResults] No result slot for ISP: ${isp} (mapped from ${ispName})`);
                                             }
-                                        });
-
-                                        // Find latest timestamp
-                                        const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
-
-                                        // Check for blocked ISPs and send Telegram alert for this domain
-                                        const blockedISPs = Object.values(updatedResults)
-                                            .filter(r => r.status === Status.BLOCKED)
-                                            .map(r => r.isp as ISP);
-
-                                        if (blockedISPs.length > 0) {
-                                            hasBlockedDomains = true;
-                                            addLog(`${domain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
-
-                                            // Note: Telegram alerts are now sent by Workers Cron job (not from frontend)
-                                            // Workers will send combined table alerts for all domains at configured intervals
                                         }
-
-                                        return {
-                                            ...domain,
-                                            results: updatedResults,
-                                            lastCheck: latestTimestamp,
-                                        };
                                     });
 
-                                    // Store updated domains for alert
-                                    updatedDomainsForAlert = updated;
+                                    // Change remaining PENDING to ERROR if no results for that ISP
+                                    Object.keys(updatedResults).forEach(ispKey => {
+                                        const isp = ispKey as ISP;
+                                        if (updatedResults[isp].status === Status.PENDING) {
+                                            // Check if any result maps to this ISP
+                                            // Note: True and DTAC use the same network (True Corporation), so they map to the same ISP
+                                            const ispMap: Record<string, ISP> = {
+                                                'Unknown': ISP.AIS,
+                                                'unknown': ISP.AIS,
+                                                'AIS': ISP.AIS,
+                                                'True': ISP.TRUE,      // True maps to True/DTAC
+                                                'TRUE': ISP.TRUE,
+                                                'true': ISP.TRUE,
+                                                'DTAC': ISP.TRUE,      // DTAC maps to True/DTAC (same network)
+                                                'dtac': ISP.TRUE,
+                                                'NT': ISP.NT,
+                                                'nt': ISP.NT,
+                                                'Global (Google)': ISP.GLOBAL,
+                                                'Global': ISP.GLOBAL,
+                                            };
+                                            const hasResult = hostnameResults.some(r => {
+                                                const mappedIsp = ispMap[r.isp_name] || ISP.AIS;
+                                                return mappedIsp === isp;
+                                            });
+                                            if (!hasResult) {
+                                                updatedResults[isp] = {
+                                                    ...updatedResults[isp],
+                                                    status: Status.ERROR,
+                                                    details: 'No result from mobile app for this ISP'
+                                                };
+                                            }
+                                        }
+                                    });
 
-                                    return updated;
+                                    // Find latest timestamp
+                                    const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
+
+                                    // Check for blocked ISPs and send Telegram alert for this domain
+                                    const blockedISPs = Object.values(updatedResults)
+                                        .filter(r => r.status === Status.BLOCKED)
+                                        .map(r => r.isp as ISP);
+
+                                    if (blockedISPs.length > 0) {
+                                        hasBlockedDomains = true;
+                                        addLog(`${domain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
+
+                                        // Note: Telegram alerts are now sent by Workers Cron job (not from frontend)
+                                        // Workers will send combined table alerts for all domains at configured intervals
+                                    }
+
+                                    return {
+                                        ...domain,
+                                        results: updatedResults,
+                                        lastCheck: latestTimestamp,
+                                    };
                                 });
 
-                                // All domains updated, scan complete
-                                if (!hasBlockedDomains) {
-                                    addLog('All domains are active', 'success');
-                                }
+                                // Store updated domains for alert
+                                updatedDomainsForAlert = updated;
 
-                                // Send Telegram alert table (combined table for all domains) after scan completes
-                                const currentSettings = settingsRef.current;
-                                console.log('🔔 [Frontend Alert] Checking conditions:', {
-                                    hasBotToken: !!currentSettings.telegramBotToken,
-                                    hasChatId: !!currentSettings.telegramChatId,
-                                    domainsCount: updatedDomainsForAlert.length,
-                                    botTokenLength: currentSettings.telegramBotToken?.length || 0,
-                                    chatId: currentSettings.telegramChatId || 'N/A'
-                                });
+                                return updated;
+                            });
 
-                                if (currentSettings.telegramBotToken && currentSettings.telegramChatId && updatedDomainsForAlert.length > 0) {
-                                    try {
-                                        console.log(`🔔 [Frontend Alert] Sending alert table with ${updatedDomainsForAlert.length} domains`);
-                                        addLog(`Sending Telegram alert table (${updatedDomainsForAlert.length} domains)...`, 'info');
+    // All domains updated, scan complete
+    if (!hasBlockedDomains) {
+        addLog('All domains are active', 'success');
+    }
 
-                                        // Send combined table alert to default chat
-                                        const sent = await sendTelegramAlertTable(
-                                            currentSettings.telegramBotToken,
-                                            currentSettings.telegramChatId,
-                                            updatedDomainsForAlert
-                                        );
+    // Send Telegram alert table (combined table for all domains) after scan completes
+    // Use setTimeout to ensure state is updated before sending alert
+    // Use domainsRef.current instead of updatedDomainsForAlert because ref updates immediately
+    setTimeout(async () => {
+        const currentSettings = settingsRef.current;
+        const domainsForAlert = domainsRef.current; // Use ref instead of updatedDomainsForAlert
+        console.log('🔔 [Frontend Alert] Checking conditions:', {
+            hasBotToken: !!currentSettings.telegramBotToken,
+            hasChatId: !!currentSettings.telegramChatId,
+            domainsCount: domainsForAlert.length,
+            botTokenLength: currentSettings.telegramBotToken?.length || 0,
+            chatId: currentSettings.telegramChatId || 'N/A'
+        });
 
-                                        if (sent) {
-                                            console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully');
-                                            addLog(`Telegram alert table sent (${updatedDomainsForAlert.length} domains)`, 'success');
-                                        } else {
-                                            console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table (sent = false)');
-                                            addLog('Failed to send Telegram alert table', 'error');
-                                        }
-                                    } catch (error) {
-                                        console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
-                                        addLog(`Error sending Telegram alert table: ${error instanceof Error ? error.message : String(error)}`, 'error');
-                                    }
-                                } else {
-                                    const missingItems = [];
-                                    if (!currentSettings.telegramBotToken) missingItems.push('Bot Token');
-                                    if (!currentSettings.telegramChatId) missingItems.push('Chat ID');
-                                    if (updatedDomainsForAlert.length === 0) missingItems.push('Domains (empty)');
+        if (currentSettings.telegramBotToken && currentSettings.telegramChatId && domainsForAlert.length > 0) {
+            try {
+                console.log(`🔔 [Frontend Alert] Sending alert table with ${domainsForAlert.length} domains`);
+                addLog(`Sending Telegram alert table (${domainsForAlert.length} domains)...`, 'info');
 
-                                    console.warn('🔔 [Frontend Alert] ⚠️ Skipping alert - missing:', missingItems.join(', '));
-                                    addLog(`Skipping Telegram alert - missing: ${missingItems.join(', ')}`, 'info');
-                                }
+                // Send combined table alert to default chat
+                const sent = await sendTelegramAlertTable(
+                    currentSettings.telegramBotToken,
+                    currentSettings.telegramChatId,
+                    domainsForAlert
+                );
 
-                                // Update nextScanTime in D1 after scan completes (shared storage)
-                                const currentInterval = settingsRef.current.checkInterval;
-                                if (currentInterval > 0) {
-                                    const intervalMs = currentInterval * 60 * 1000;
-                                    const nextScan = Date.now() + intervalMs;
-
-                                    // Save to Workers API (D1) - this is where we write nextScanTime
-                                    try {
-                                        const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
-                                        });
-
-                                        if (saveResponse.ok) {
-                                            const saveData = await saveResponse.json();
-                                            // Use nextScanTime from response (confirmed saved to D1)
-                                            const confirmedNextScan = saveData.nextScanTime || nextScan;
-                                            nextScanTimeRef.current = confirmedNextScan;
-                                            setNextScanTime(confirmedNextScan);
-                                            console.log(`📅 Saved next scan time to D1 after manual scan: ${new Date(confirmedNextScan).toLocaleString()}`);
-                                        } else {
-                                            // Fallback to local time if save failed
-                                            nextScanTimeRef.current = nextScan;
-                                            setNextScanTime(nextScan);
-                                            console.error('Failed to save next scan time to D1, using local time');
-                                        }
-                                    } catch (saveError) {
-                                        console.error('Error saving next scan time to D1:', saveError);
-                                        // Fallback to local time on error
-                                        nextScanTimeRef.current = nextScan;
-                                        setNextScanTime(nextScan);
-                                    }
-                                }
-
-                                setLoading(false);
-                                addLog('Scan complete.', 'success');
-                                return;
-                            } else {
-                                console.log('Results are older than trigger, waiting for new results...');
-                            }
-                        } else {
-                            console.log('No results yet, waiting...');
-                        }
-
-                        // If no new results yet, continue polling
-                        if (attempts < maxAttempts) {
-                            setTimeout(pollForResults, 2000);
-                        } else {
-                            addLog('⏱️ Timeout: Mobile app did not respond within 30 seconds.', 'error');
-                            addLog('📱 Mobile app needs to poll /api/trigger-check every 30 seconds.', 'error');
-                            addLog('💡 Please implement trigger polling in mobile app or check manually from mobile app.', 'error');
-                            setLoading(false);
-                        }
-                    } catch (error) {
-                        console.error('Error polling for results:', error);
-                        if (attempts < maxAttempts) {
-                            setTimeout(pollForResults, 2000);
-                        } else {
-                            addLog('Failed to get results from mobile app', 'error');
-                            setLoading(false);
-                        }
-                    }
-                };
-
-                // Start polling after 2 seconds
-                setTimeout(pollForResults, 2000);
+                if (sent) {
+                    console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully');
+                    addLog(`Telegram alert table sent (${domainsForAlert.length} domains)`, 'success');
+                } else {
+                    console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table (sent = false)');
+                    addLog('Failed to send Telegram alert table', 'error');
+                }
             } catch (error) {
-                console.error('Error triggering mobile app:', error);
-                addLog('Failed to trigger mobile app check', 'error');
-                addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
-                setLoading(false);
+                console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
+                addLog(`Error sending Telegram alert table: ${error instanceof Error ? error.message : String(error)}`, 'error');
             }
         } else {
-            // No Workers URL configured
-            addLog('Workers URL not configured. Please set Workers URL in Settings.', 'error');
-            addLog('Mobile app integration requires Workers URL to be configured.', 'error');
-            setLoading(false);
+            const missingItems = [];
+            if (!currentSettings.telegramBotToken) missingItems.push('Bot Token');
+            if (!currentSettings.telegramChatId) missingItems.push('Chat ID');
+            if (domainsForAlert.length === 0) missingItems.push('Domains (empty)');
+
+            console.warn('🔔 [Frontend Alert] ⚠️ Skipping alert - missing:', missingItems.join(', '));
+            addLog(`Skipping Telegram alert - missing: ${missingItems.join(', ')}`, 'info');
         }
+    }, 100); // Wait 100ms for state to update
+
+    // Update nextScanTime in D1 after scan completes (shared storage)
+    const currentInterval = settingsRef.current.checkInterval;
+    if (currentInterval > 0) {
+        const intervalMs = currentInterval * 60 * 1000;
+        const nextScan = Date.now() + intervalMs;
+
+        // Save to Workers API (D1) - this is where we write nextScanTime
+        try {
+            const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
+            });
+
+            if (saveResponse.ok) {
+                const saveData = await saveResponse.json();
+                // Use nextScanTime from response (confirmed saved to D1)
+                const confirmedNextScan = saveData.nextScanTime || nextScan;
+                nextScanTimeRef.current = confirmedNextScan;
+                setNextScanTime(confirmedNextScan);
+                console.log(`📅 Saved next scan time to D1 after manual scan: ${new Date(confirmedNextScan).toLocaleString()}`);
+            } else {
+                // Fallback to local time if save failed
+                nextScanTimeRef.current = nextScan;
+                setNextScanTime(nextScan);
+                console.error('Failed to save next scan time to D1, using local time');
+            }
+        } catch (saveError) {
+            console.error('Error saving next scan time to D1:', saveError);
+            // Fallback to local time on error
+            nextScanTimeRef.current = nextScan;
+            setNextScanTime(nextScan);
+        }
+    }
+
+    setLoading(false);
+    addLog('Scan complete.', 'success');
+    return;
+} else {
+    console.log('Results are older than trigger, waiting for new results...');
+}
+                        } else {
+    console.log('No results yet, waiting...');
+}
+
+// If no new results yet, continue polling
+if (attempts < maxAttempts) {
+    setTimeout(pollForResults, 2000);
+} else {
+    addLog('⏱️ Timeout: Mobile app did not respond within 30 seconds.', 'error');
+    addLog('📱 Mobile app needs to poll /api/trigger-check every 30 seconds.', 'error');
+    addLog('💡 Please implement trigger polling in mobile app or check manually from mobile app.', 'error');
+    setLoading(false);
+}
+                    } catch (error) {
+    console.error('Error polling for results:', error);
+    if (attempts < maxAttempts) {
+        setTimeout(pollForResults, 2000);
+    } else {
+        addLog('Failed to get results from mobile app', 'error');
+        setLoading(false);
+    }
+}
+                };
+
+// Start polling after 2 seconds
+setTimeout(pollForResults, 2000);
+            } catch (error) {
+    console.error('Error triggering mobile app:', error);
+    addLog('Failed to trigger mobile app check', 'error');
+    addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
+    setLoading(false);
+}
+        } else {
+    // No Workers URL configured
+    addLog('Workers URL not configured. Please set Workers URL in Settings.', 'error');
+    addLog('Mobile app integration requires Workers URL to be configured.', 'error');
+    setLoading(false);
+}
     }, [loading, checkSingleDomain, addLog]);
 
-    // Scheduler
-    useEffect(() => {
-        if (!loadedRef.current || domains.length === 0) return;
+// Scheduler
+useEffect(() => {
+    if (!loadedRef.current || domains.length === 0) return;
 
-        // Skip auto-scan if KV limit is exceeded (but we're using D1 now, so this should not happen)
-        // Note: D1 doesn't have write limits like KV, so this check is mainly for backward compatibility
-        // Reset KV limit check since we're using D1 now
-        if (kvLimitExceededRef.current) {
-            console.log('⏸️ Auto-scan paused - KV limit exceeded (using D1 now, resetting...)');
-            // Reset immediately since we're using D1 now
-            kvLimitExceededRef.current = false;
-            addLog('✅ KV limit check reset - Using D1 now (no write limits)', 'info');
-        }
+    // Skip auto-scan if KV limit is exceeded (but we're using D1 now, so this should not happen)
+    // Note: D1 doesn't have write limits like KV, so this check is mainly for backward compatibility
+    // Reset KV limit check since we're using D1 now
+    if (kvLimitExceededRef.current) {
+        console.log('⏸️ Auto-scan paused - KV limit exceeded (using D1 now, resetting...)');
+        // Reset immediately since we're using D1 now
+        kvLimitExceededRef.current = false;
+        addLog('✅ KV limit check reset - Using D1 now (no write limits)', 'info');
+    }
 
-        // Removed: Auto-trigger scan on mount
-        // Now we just load existing results from Workers API (D1) instead of triggering a new scan
-        // Users can manually trigger a scan using the "RUN FULL SCAN" button if needed
-    }, [loading, settings.checkInterval, domains.length]); // Dependencies
+    // Removed: Auto-trigger scan on mount
+    // Now we just load existing results from Workers API (D1) instead of triggering a new scan
+    // Users can manually trigger a scan using the "RUN FULL SCAN" button if needed
+}, [loading, settings.checkInterval, domains.length]); // Dependencies
 
-    // Shared auto-scan timer (sync with Workers API to avoid duplicate triggers)
-    useEffect(() => {
-        if (!loadedRef.current || settings.checkInterval <= 0) {
+// Shared auto-scan timer (sync with Workers API to avoid duplicate triggers)
+useEffect(() => {
+    if (!loadedRef.current || settings.checkInterval <= 0) {
+        setNextScanTime(null);
+        return;
+    }
+
+    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+    if (!workersUrl) {
+        console.log('Workers URL not configured, using local timer');
+        // Fallback to local timer if Workers URL not configured
+        const intervalMs = settings.checkInterval * 60 * 1000;
+        const nextScan = Date.now() + intervalMs;
+        setNextScanTime(nextScan);
+        const intervalId = setInterval(() => {
+            addLog('Auto-scan interval reached', 'info');
+            runAllChecks();
+            setNextScanTime(Date.now() + intervalMs);
+        }, intervalMs);
+        return () => clearInterval(intervalId);
+    }
+
+    let isChecking = false; // Prevent concurrent checks
+
+    // Get shared next scan time from Workers API (D1) - READ ONLY, DO NOT CREATE NEW ONE
+    // Sync next scan time from D1 - ONLY READ, don't create new one
+    // nextScanTime should only be created when:
+    // 1. RUN FULL SCAN completes (saves to D1)
+    // 2. Auto-scan timer triggers (saves to D1)
+    const syncNextScanTime = async () => {
+        try {
+            const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.nextScanTime && data.nextScanTime > Date.now()) {
+                    // Use shared next scan time from D1 (still valid)
+                    nextScanTimeRef.current = data.nextScanTime;
+                    setNextScanTime(data.nextScanTime);
+                    console.log(`📅 Using shared next scan time from D1: ${new Date(data.nextScanTime).toLocaleString()}`);
+                } else {
+                    // No shared time or expired - don't create new one, just set to null
+                    // Will be created when RUN FULL SCAN or auto-scan runs
+                    nextScanTimeRef.current = null;
+                    setNextScanTime(null);
+                    console.log('📅 No valid next scan time in D1 (will be set when scan runs)');
+                }
+            } else {
+                // API error - don't create new one, just set to null
+                nextScanTimeRef.current = null;
+                setNextScanTime(null);
+                console.log('📅 Failed to fetch next scan time from D1');
+            }
+        } catch (error) {
+            console.error('Error syncing next scan time:', error);
+            // Don't create new one on error - just set to null
+            nextScanTimeRef.current = null;
             setNextScanTime(null);
-            return;
         }
+    };
 
-        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
-        if (!workersUrl) {
-            console.log('Workers URL not configured, using local timer');
-            // Fallback to local timer if Workers URL not configured
-            const intervalMs = settings.checkInterval * 60 * 1000;
-            const nextScan = Date.now() + intervalMs;
-            setNextScanTime(nextScan);
-            const intervalId = setInterval(() => {
-                addLog('Auto-scan interval reached', 'info');
-                runAllChecks();
-                setNextScanTime(Date.now() + intervalMs);
-            }, intervalMs);
-            return () => clearInterval(intervalId);
-        }
+    // Sync immediately - only read from D1, don't create new one
+    syncNextScanTime();
 
-        let isChecking = false; // Prevent concurrent checks
+    // Check every 10 seconds if it's time to scan
+    const checkInterval = setInterval(async () => {
+        if (isChecking) return; // Prevent concurrent checks
 
-        // Get shared next scan time from Workers API (D1) - READ ONLY, DO NOT CREATE NEW ONE
-        // Sync next scan time from D1 - ONLY READ, don't create new one
-        // nextScanTime should only be created when:
-        // 1. RUN FULL SCAN completes (saves to D1)
-        // 2. Auto-scan timer triggers (saves to D1)
-        const syncNextScanTime = async () => {
+        // Use ref value to avoid dependency on state
+        const currentNextScan = nextScanTimeRef.current;
+        if (currentNextScan && Date.now() >= currentNextScan) {
+            isChecking = true;
+
+            // Time to scan - check if someone else already triggered
             try {
                 const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.nextScanTime && data.nextScanTime > Date.now()) {
-                        // Use shared next scan time from D1 (still valid)
+                        // Someone else already updated, use their time
                         nextScanTimeRef.current = data.nextScanTime;
                         setNextScanTime(data.nextScanTime);
-                        console.log(`📅 Using shared next scan time from D1: ${new Date(data.nextScanTime).toLocaleString()}`);
-                    } else {
-                        // No shared time or expired - don't create new one, just set to null
-                        // Will be created when RUN FULL SCAN or auto-scan runs
-                        nextScanTimeRef.current = null;
-                        setNextScanTime(null);
-                        console.log('📅 No valid next scan time in D1 (will be set when scan runs)');
+                        console.log('⏭️ Scan already triggered by another user, skipping');
+                        isChecking = false;
+                        return;
                     }
-                } else {
-                    // API error - don't create new one, just set to null
-                    nextScanTimeRef.current = null;
-                    setNextScanTime(null);
-                    console.log('📅 Failed to fetch next scan time from D1');
                 }
             } catch (error) {
-                console.error('Error syncing next scan time:', error);
-                // Don't create new one on error - just set to null
-                nextScanTimeRef.current = null;
-                setNextScanTime(null);
+                console.error('Error checking next scan time:', error);
             }
-        };
 
-        // Sync immediately - only read from D1, don't create new one
-        syncNextScanTime();
+            // Trigger scan and update next scan time in D1 (shared storage)
+            addLog('Auto-scan interval reached', 'info');
+            await runAllChecks();
 
-        // Check every 10 seconds if it's time to scan
-        const checkInterval = setInterval(async () => {
-            if (isChecking) return; // Prevent concurrent checks
+            // Use ref to get current checkInterval (avoid dependency)
+            const currentInterval = settingsRef.current.checkInterval;
+            const intervalMs = currentInterval * 60 * 1000;
+            const nextScan = Date.now() + intervalMs;
 
-            // Use ref value to avoid dependency on state
-            const currentNextScan = nextScanTimeRef.current;
-            if (currentNextScan && Date.now() >= currentNextScan) {
-                isChecking = true;
+            // Save to Workers API (D1) - this is the ONLY place we write nextScanTime
+            try {
+                const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
+                });
 
-                // Time to scan - check if someone else already triggered
-                try {
-                    const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.nextScanTime && data.nextScanTime > Date.now()) {
-                            // Someone else already updated, use their time
-                            nextScanTimeRef.current = data.nextScanTime;
-                            setNextScanTime(data.nextScanTime);
-                            console.log('⏭️ Scan already triggered by another user, skipping');
-                            isChecking = false;
-                            return;
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error checking next scan time:', error);
-                }
-
-                // Trigger scan and update next scan time in D1 (shared storage)
-                addLog('Auto-scan interval reached', 'info');
-                await runAllChecks();
-
-                // Use ref to get current checkInterval (avoid dependency)
-                const currentInterval = settingsRef.current.checkInterval;
-                const intervalMs = currentInterval * 60 * 1000;
-                const nextScan = Date.now() + intervalMs;
-
-                // Save to Workers API (D1) - this is the ONLY place we write nextScanTime
-                try {
-                    const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
-                    });
-
-                    if (saveResponse.ok) {
-                        const saveData = await saveResponse.json();
-                        // Use nextScanTime from response (confirmed saved to D1)
-                        const confirmedNextScan = saveData.nextScanTime || nextScan;
-                        nextScanTimeRef.current = confirmedNextScan;
-                        setNextScanTime(confirmedNextScan);
-                        console.log(`📅 Saved new shared next scan time to D1: ${new Date(confirmedNextScan).toLocaleString()}`);
-                    } else {
-                        // Fallback to local time if save failed
-                        nextScanTimeRef.current = nextScan;
-                        setNextScanTime(nextScan);
-                        console.error('Failed to save next scan time to D1, using local time');
-                    }
-                } catch (error) {
-                    console.error('Error saving next scan time to D1:', error);
-                    // Fallback to local time on error
+                if (saveResponse.ok) {
+                    const saveData = await saveResponse.json();
+                    // Use nextScanTime from response (confirmed saved to D1)
+                    const confirmedNextScan = saveData.nextScanTime || nextScan;
+                    nextScanTimeRef.current = confirmedNextScan;
+                    setNextScanTime(confirmedNextScan);
+                    console.log(`📅 Saved new shared next scan time to D1: ${new Date(confirmedNextScan).toLocaleString()}`);
+                } else {
+                    // Fallback to local time if save failed
                     nextScanTimeRef.current = nextScan;
                     setNextScanTime(nextScan);
+                    console.error('Failed to save next scan time to D1, using local time');
                 }
-
-                isChecking = false;
+            } catch (error) {
+                console.error('Error saving next scan time to D1:', error);
+                // Fallback to local time on error
+                nextScanTimeRef.current = nextScan;
+                setNextScanTime(nextScan);
             }
-        }, 10000); // Check every 10 seconds
 
-        return () => clearInterval(checkInterval);
-    }, [loadedRef.current, settings.checkInterval, runAllChecks, addLog]);
+            isChecking = false;
+        }
+    }, 10000); // Check every 10 seconds
 
-    // Show loading while checking authentication
-    if (isAuthenticated === null) {
-        return (
-            <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-16 h-16 border-4 border-neon-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-gray-400">Checking authentication...</p>
-                </div>
-            </div>
-        );
-    }
+    return () => clearInterval(checkInterval);
+}, [loadedRef.current, settings.checkInterval, runAllChecks, addLog]);
 
-    // Redirect to login if not authenticated
-    if (isAuthenticated === false) {
-        return null; // Will redirect via useEffect
-    }
-
+// Show loading while checking authentication
+if (isAuthenticated === null) {
     return (
-        <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
-            <header className="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
-                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
-                    <div className="flex items-center mb-4 md:mb-0">
-                        <div className="w-10 h-10 bg-neon-blue/10 rounded-full flex items-center justify-center mr-3 border border-neon-blue shadow-[0_0_15px_rgba(0,243,255,0.3)]">
-                            <Shield className="w-6 h-6 text-neon-blue" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold text-white tracking-wider">SENTINEL <span className="text-neon-blue">DNS</span></h1>
-                            <p className="text-xs text-gray-500 font-mono">CLOUD EDGE MONITOR</p>
-                        </div>
-                    </div>
+        <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black flex items-center justify-center">
+            <div className="text-center">
+                <div className="w-16 h-16 border-4 border-neon-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-gray-400">Checking authentication...</p>
+            </div>
+        </div>
+    );
+}
 
-                    <nav className="flex space-x-2 items-center">
-                        <div className="flex space-x-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
-                            <button
-                                onClick={() => setActiveTab('dashboard')}
-                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                <Activity className="w-4 h-4 inline mr-2" />
-                                Dashboard
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('settings')}
-                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                <Terminal className="w-4 h-4 inline mr-2" />
-                                Settings
-                            </button>
-                        </div>
-                        <button
-                            onClick={async () => {
-                                const token = localStorage.getItem('auth_token');
-                                if (token) {
-                                    try {
-                                        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
-                                        if (workersUrl) {
-                                            await fetch(`${workersUrl}/api/auth/logout`, {
-                                                method: 'POST',
-                                                headers: {
-                                                    'Authorization': `Bearer ${token}`,
-                                                    'Content-Type': 'application/json',
-                                                },
-                                            });
-                                        }
-                                    } catch (error) {
-                                        console.error('Logout error:', error);
-                                    }
-                                }
-                                localStorage.removeItem('auth_token');
-                                localStorage.removeItem('auth_user');
-                                window.location.href = '/login';
-                            }}
-                            className="ml-2 px-4 py-2 rounded text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all flex items-center gap-2"
-                            title="Logout"
-                        >
-                            <LogOut className="w-4 h-4" />
-                            <span>Logout</span>
-                        </button>
-                    </nav>
+// Redirect to login if not authenticated
+if (isAuthenticated === false) {
+    return null; // Will redirect via useEffect
+}
+
+return (
+    <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
+        <header className="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
+                <div className="flex items-center mb-4 md:mb-0">
+                    <div className="w-10 h-10 bg-neon-blue/10 rounded-full flex items-center justify-center mr-3 border border-neon-blue shadow-[0_0_15px_rgba(0,243,255,0.3)]">
+                        <Shield className="w-6 h-6 text-neon-blue" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-white tracking-wider">SENTINEL <span className="text-neon-blue">DNS</span></h1>
+                        <p className="text-xs text-gray-500 font-mono">CLOUD EDGE MONITOR</p>
+                    </div>
                 </div>
-            </header>
 
-            <main className="max-w-7xl mx-auto p-4 md:p-6">
-                {activeTab === 'settings' ? (
-                    <div className="max-w-2xl mx-auto animate-fadeIn">
-                        <SettingsPanel settings={settings} onSave={setSettings} />
+                <nav className="flex space-x-2 items-center">
+                    <div className="flex space-x-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
+                        <button
+                            onClick={() => setActiveTab('dashboard')}
+                            className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <Activity className="w-4 h-4 inline mr-2" />
+                            Dashboard
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('settings')}
+                            className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <Terminal className="w-4 h-4 inline mr-2" />
+                            Settings
+                        </button>
                     </div>
-                ) : (
-                    <div className="space-y-6 animate-fadeIn">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="col-span-2 space-y-4">
-                                <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-lg">
-                                    <form onSubmit={handleAddDomain} className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newUrl}
-                                            onChange={(e) => setNewUrl(e.target.value)}
-                                            placeholder="https://example.com"
-                                            className="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-neon-blue focus:outline-none transition-colors"
-                                        />
-                                        <button type="submit" className="bg-neon-blue hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded flex items-center transition-colors">
-                                            <Plus className="w-5 h-5" />
-                                        </button>
-                                    </form>
-                                </div>
+                    <button
+                        onClick={async () => {
+                            const token = localStorage.getItem('auth_token');
+                            if (token) {
+                                try {
+                                    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                                    if (workersUrl) {
+                                        await fetch(`${workersUrl}/api/auth/logout`, {
+                                            method: 'POST',
+                                            headers: {
+                                                'Authorization': `Bearer ${token}`,
+                                                'Content-Type': 'application/json',
+                                            },
+                                        });
+                                    }
+                                } catch (error) {
+                                    console.error('Logout error:', error);
+                                }
+                            }
+                            localStorage.removeItem('auth_token');
+                            localStorage.removeItem('auth_user');
+                            window.location.href = '/login';
+                        }}
+                        className="ml-2 px-4 py-2 rounded text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all flex items-center gap-2"
+                        title="Logout"
+                    >
+                        <LogOut className="w-4 h-4" />
+                        <span>Logout</span>
+                    </button>
+                </nav>
+            </div>
+        </header>
 
-                                <div className="space-y-4">
-                                    {domains.map(domain => (
-                                        <DomainCard
-                                            key={domain.id}
-                                            domain={domain}
-                                            onDelete={handleDeleteDomain}
-                                            onRefresh={checkSingleDomain}
-                                            onUpdate={handleUpdateDomain}
-                                        />
-                                    ))}
-                                    {domains.length === 0 && (
-                                        <div className="text-center py-10 text-gray-500 border border-dashed border-gray-800 rounded-lg">
-                                            No domains monitored. Add one above.
-                                        </div>
-                                    )}
-                                </div>
+        <main className="max-w-7xl mx-auto p-4 md:p-6">
+            {activeTab === 'settings' ? (
+                <div className="max-w-2xl mx-auto animate-fadeIn">
+                    <SettingsPanel settings={settings} onSave={setSettings} />
+                </div>
+            ) : (
+                <div className="space-y-6 animate-fadeIn">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="col-span-2 space-y-4">
+                            <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-lg">
+                                <form onSubmit={handleAddDomain} className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={newUrl}
+                                        onChange={(e) => setNewUrl(e.target.value)}
+                                        placeholder="https://example.com"
+                                        className="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-neon-blue focus:outline-none transition-colors"
+                                    />
+                                    <button type="submit" className="bg-neon-blue hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded flex items-center transition-colors">
+                                        <Plus className="w-5 h-5" />
+                                    </button>
+                                </form>
                             </div>
 
                             <div className="space-y-4">
-                                <div className="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-lg">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">Status Control</h3>
-                                        {loading && <Activity className="w-4 h-4 text-neon-blue animate-pulse" />}
+                                {domains.map(domain => (
+                                    <DomainCard
+                                        key={domain.id}
+                                        domain={domain}
+                                        onDelete={handleDeleteDomain}
+                                        onRefresh={checkSingleDomain}
+                                        onUpdate={handleUpdateDomain}
+                                    />
+                                ))}
+                                {domains.length === 0 && (
+                                    <div className="text-center py-10 text-gray-500 border border-dashed border-gray-800 rounded-lg">
+                                        No domains monitored. Add one above.
                                     </div>
+                                )}
+                            </div>
+                        </div>
 
-                                    <button
-                                        onClick={() => runAllChecks()}
-                                        disabled={loading || domains.length === 0}
-                                        className={`w-full py-4 rounded font-bold text-center mb-4 transition-all flex items-center justify-center ${loading
-                                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                            : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
-                                            }`}
-                                    >
-                                        {loading ? <span className="animate-pulse">SCANNING...</span> : <><Play className="w-4 h-4 mr-2 fill-current" /> RUN FULL SCAN</>}
-                                    </button>
-
-                                    <div className="space-y-3 pt-4 border-t border-gray-700">
-                                        <div className="flex justify-between text-xs items-center">
-                                            <span className="text-gray-400">Interval:</span>
-                                            <span className="text-neon-blue font-mono">
-                                                {settings.checkInterval >= 1440 ? `${(settings.checkInterval / 60).toFixed(0)} Hours` : `${settings.checkInterval} Mins`}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between text-xs items-center">
-                                            <span className="text-gray-400">Auto-Scan:</span>
-                                            <button
-                                                onClick={() => {
-                                                    if (settings.checkInterval > 0) {
-                                                        // Pause: set to 0
-                                                        setSettings(prev => ({ ...prev, checkInterval: 0 }));
-                                                        addLog('Auto-scan paused', 'info');
-                                                    } else {
-                                                        // Resume: set to default 6 hours
-                                                        setSettings(prev => ({ ...prev, checkInterval: 360 }));
-                                                        addLog('Auto-scan resumed (6 hours interval)', 'success');
-                                                    }
-                                                }}
-                                                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${settings.checkInterval > 0
-                                                    ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/50'
-                                                    : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600'
-                                                    }`}
-                                                title={settings.checkInterval > 0 ? 'Click to pause auto-scan' : 'Click to resume auto-scan'}
-                                            >
-                                                {settings.checkInterval > 0 ? 'ON' : 'OFF'}
-                                            </button>
-                                        </div>
-                                        <div className="flex justify-between text-xs items-center">
-                                            <span className="text-gray-400">Next Auto-Scan:</span>
-                                            <span className="text-gray-200 font-mono flex items-center">
-                                                <Clock className="w-3 h-3 mr-1 text-gray-500" />
-                                                {settings.checkInterval > 0 && nextScanTime
-                                                    ? new Date(nextScanTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-                                                    : 'Paused'}
-                                            </span>
-                                        </div>
-                                    </div>
+                        <div className="space-y-4">
+                            <div className="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-lg">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">Status Control</h3>
+                                    {loading && <Activity className="w-4 h-4 text-neon-blue animate-pulse" />}
                                 </div>
 
-                                <div className="bg-gray-900 p-4 rounded-lg border border-gray-800 h-[400px] flex flex-col shadow-inner">
-                                    <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center">
-                                        <Terminal className="w-4 h-4 mr-2" />
-                                        System Logs
-                                    </h3>
-                                    <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs custom-scrollbar pr-2">
-                                        {logs.map(log => (
-                                            <div key={log.id} className="border-b border-gray-800 pb-1 last:border-0">
-                                                <span className="text-gray-600 inline-block w-[70px]">
-                                                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                                </span>
-                                                <span className={`ml-2 ${log.type === 'error' ? 'text-red-500' :
-                                                    log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
-                                                        log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
-                                                    }`}>{log.message}</span>
-                                            </div>
-                                        ))}
-                                        {logs.length === 0 && <span className="text-gray-700 italic">Waiting for activity...</span>}
+                                <button
+                                    onClick={() => runAllChecks()}
+                                    disabled={loading || domains.length === 0}
+                                    className={`w-full py-4 rounded font-bold text-center mb-4 transition-all flex items-center justify-center ${loading
+                                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                        : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
+                                        }`}
+                                >
+                                    {loading ? <span className="animate-pulse">SCANNING...</span> : <><Play className="w-4 h-4 mr-2 fill-current" /> RUN FULL SCAN</>}
+                                </button>
+
+                                <div className="space-y-3 pt-4 border-t border-gray-700">
+                                    <div className="flex justify-between text-xs items-center">
+                                        <span className="text-gray-400">Interval:</span>
+                                        <span className="text-neon-blue font-mono">
+                                            {settings.checkInterval >= 1440 ? `${(settings.checkInterval / 60).toFixed(0)} Hours` : `${settings.checkInterval} Mins`}
+                                        </span>
                                     </div>
+                                    <div className="flex justify-between text-xs items-center">
+                                        <span className="text-gray-400">Auto-Scan:</span>
+                                        <button
+                                            onClick={() => {
+                                                if (settings.checkInterval > 0) {
+                                                    // Pause: set to 0
+                                                    setSettings(prev => ({ ...prev, checkInterval: 0 }));
+                                                    addLog('Auto-scan paused', 'info');
+                                                } else {
+                                                    // Resume: set to default 6 hours
+                                                    setSettings(prev => ({ ...prev, checkInterval: 360 }));
+                                                    addLog('Auto-scan resumed (6 hours interval)', 'success');
+                                                }
+                                            }}
+                                            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${settings.checkInterval > 0
+                                                ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/50'
+                                                : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600'
+                                                }`}
+                                            title={settings.checkInterval > 0 ? 'Click to pause auto-scan' : 'Click to resume auto-scan'}
+                                        >
+                                            {settings.checkInterval > 0 ? 'ON' : 'OFF'}
+                                        </button>
+                                    </div>
+                                    <div className="flex justify-between text-xs items-center">
+                                        <span className="text-gray-400">Next Auto-Scan:</span>
+                                        <span className="text-gray-200 font-mono flex items-center">
+                                            <Clock className="w-3 h-3 mr-1 text-gray-500" />
+                                            {settings.checkInterval > 0 && nextScanTime
+                                                ? new Date(nextScanTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+                                                : 'Paused'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-900 p-4 rounded-lg border border-gray-800 h-[400px] flex flex-col shadow-inner">
+                                <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center">
+                                    <Terminal className="w-4 h-4 mr-2" />
+                                    System Logs
+                                </h3>
+                                <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs custom-scrollbar pr-2">
+                                    {logs.map(log => (
+                                        <div key={log.id} className="border-b border-gray-800 pb-1 last:border-0">
+                                            <span className="text-gray-600 inline-block w-[70px]">
+                                                {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                            </span>
+                                            <span className={`ml-2 ${log.type === 'error' ? 'text-red-500' :
+                                                log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
+                                                    log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
+                                                }`}>{log.message}</span>
+                                        </div>
+                                    ))}
+                                    {logs.length === 0 && <span className="text-gray-700 italic">Waiting for activity...</span>}
                                 </div>
                             </div>
                         </div>
                     </div>
-                )}
-            </main>
-        </div>
-    );
+                </div>
+            )}
+        </main>
+    </div>
+);
 }
