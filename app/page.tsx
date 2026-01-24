@@ -1555,501 +1555,799 @@ export default function Home() {
                                     };
                                 }));
 
-    // All domains updated, scan complete
-    if (!hasBlockedDomains) {
-        addLog('All domains are active', 'success');
-    }
+                                // All domains updated, scan complete
+                                if (!hasBlockedDomains) {
+                                    addLog('All domains are active', 'success');
+                                }
 
-    // Send Telegram alert table (combined table for all domains) after scan completes
-    // Use setTimeout to ensure state is updated before sending alert
-    // Use domainsRef.current instead of updatedDomainsForAlert because ref updates immediately
-    setTimeout(async () => {
-        const currentSettings = settingsRef.current;
-        const domainsForAlert = domainsRef.current; // Use ref instead of updatedDomainsForAlert
-        console.log('🔔 [Frontend Alert] Checking conditions:', {
-            hasBotToken: !!currentSettings.telegramBotToken,
-            hasChatId: !!currentSettings.telegramChatId,
-            domainsCount: domainsForAlert.length,
-            botTokenLength: currentSettings.telegramBotToken?.length || 0,
-            chatId: currentSettings.telegramChatId || 'N/A'
-        });
+                                // Send Telegram alert table (combined table for all domains) after scan completes
+                                // Fetch latest results from D1 to ensure we use the most up-to-date data
+                                setTimeout(async () => {
+                                    const currentSettings = settingsRef.current;
+                                    
+                                    // Fetch latest results from D1 to ensure we use the most up-to-date data
+                                    let domainsForAlert = domainsRef.current;
+                                    try {
+                                        console.log('🔔 [Frontend Alert] Fetching latest results from D1 before sending alert...');
+                                        const d1Response = await fetchResultsFromWorkers(workersUrl);
+                                        
+                                        if (d1Response.success && d1Response.results.length > 0) {
+                                            console.log(`🔔 [Frontend Alert] Loaded ${d1Response.results.length} results from D1`);
+                                            
+                                            // Normalize hostname for matching
+                                            const normalizeHostname = (hostname: string): string => {
+                                                return hostname.toLowerCase().replace(/^www\./, '');
+                                            };
+                                            
+                                            // Group results by normalized hostname
+                                            const resultsByHostname = new Map<string, typeof d1Response.results>();
+                                            d1Response.results.forEach(result => {
+                                                const normalized = normalizeHostname(result.hostname);
+                                                if (!resultsByHostname.has(normalized)) {
+                                                    resultsByHostname.set(normalized, []);
+                                                }
+                                                resultsByHostname.get(normalized)!.push(result);
+                                            });
+                                            
+                                            // Update domains with latest results from D1
+                                            domainsForAlert = domainsRef.current.map(domain => {
+                                                const normalizedDomainHostname = normalizeHostname(domain.hostname);
+                                                const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
+                                                
+                                                if (!hostnameResults || hostnameResults.length === 0) {
+                                                    return domain;
+                                                }
+                                                
+                                                // Map ISP names
+                                                const ispMap: Record<string, ISP> = {
+                                                    'Unknown': ISP.AIS,
+                                                    'unknown': ISP.AIS,
+                                                    'AIS': ISP.AIS,
+                                                    'True': ISP.TRUE,
+                                                    'TRUE': ISP.TRUE,
+                                                    'true': ISP.TRUE,
+                                                    'DTAC': ISP.TRUE,
+                                                    'dtac': ISP.TRUE,
+                                                    'NT': ISP.NT,
+                                                    'nt': ISP.NT,
+                                                    'Global (Google)': ISP.GLOBAL,
+                                                    'Global': ISP.GLOBAL,
+                                                };
+                                                
+                                                // Group results by mapped ISP and get best result for each ISP
+                                                const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
+                                                hostnameResults.forEach(workerResult => {
+                                                    const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
+                                                    const existing = resultsByMappedISP.get(mappedISP);
+                                                    
+                                                    if (!existing) {
+                                                        resultsByMappedISP.set(mappedISP, workerResult);
+                                                    } else {
+                                                        // Priority: 1) BLOCKED, 2) ISP name clarity, 3) Latest timestamp
+                                                        if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
+                                                            resultsByMappedISP.set(mappedISP, workerResult);
+                                                        } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
+                                                            // Keep existing BLOCKED
+                                                        } else {
+                                                            const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
+                                                            const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
+                                                            
+                                                            if (!newIsUnknown && existingIsUnknown) {
+                                                                resultsByMappedISP.set(mappedISP, workerResult);
+                                                            } else if (!newIsUnknown && !existingIsUnknown) {
+                                                                const existingTimestamp = existing.timestamp || 0;
+                                                                const newTimestamp = workerResult.timestamp || 0;
+                                                                if (newTimestamp > existingTimestamp) {
+                                                                    resultsByMappedISP.set(mappedISP, workerResult);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                });
+                                                
+                                                // Convert Workers results to ISPResult format
+                                                const updatedResults = { ...domain.results };
+                                                resultsByMappedISP.forEach((workerResult, isp) => {
+                                                    const ispName = workerResult.isp_name;
+                                                    const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
+                                                        ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
+                                                    
+                                                    if (isTrueOrDTAC) {
+                                                        const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
+                                                        slots.forEach(slotKey => {
+                                                            if (updatedResults[slotKey]) {
+                                                                updatedResults[slotKey] = {
+                                                                    isp: slotKey === 'True' ? ISP.TRUE : slotKey === 'DTAC' ? ISP.DTAC : slotKey,
+                                                                    status: workerResult.status as Status,
+                                                                    ip: workerResult.ip || '',
+                                                                    latency: workerResult.latency || 0,
+                                                                    details: `From D1 (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                                    source: 'server',
+                                                                    deviceId: workerResult.device_id,
+                                                                    timestamp: workerResult.timestamp,
+                                                                };
+                                                            }
+                                                        });
+                                                    } else {
+                                                        if (updatedResults[isp]) {
+                                                            updatedResults[isp] = {
+                                                                isp: isp,
+                                                                status: workerResult.status as Status,
+                                                                ip: workerResult.ip || '',
+                                                                latency: workerResult.latency || 0,
+                                                                details: `From D1 (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                                source: 'server',
+                                                                deviceId: workerResult.device_id,
+                                                                timestamp: workerResult.timestamp,
+                                                            };
+                                                        }
+                                                    }
+                                                });
+                                                
+                                                const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
+                                                
+                                                return {
+                                                    ...domain,
+                                                    results: updatedResults,
+                                                    lastCheck: latestTimestamp,
+                                                };
+                                            });
+                                            
+                                            console.log(`🔔 [Frontend Alert] Updated ${domainsForAlert.length} domains with latest results from D1`);
+                                        } else {
+                                            console.log('🔔 [Frontend Alert] No results in D1, using current domains state');
+                                        }
+                                    } catch (d1Error) {
+                                        console.warn('🔔 [Frontend Alert] Failed to fetch from D1, using current domains state:', d1Error);
+                                        // Use current domains state if D1 fetch fails
+                                    }
+                                    
+                                    console.log('🔔 [Frontend Alert] Checking conditions:', {
+                                        hasBotToken: !!currentSettings.telegramBotToken,
+                                        hasChatId: !!currentSettings.telegramChatId,
+                                        domainsCount: domainsForAlert.length,
+                                        botTokenLength: currentSettings.telegramBotToken?.length || 0,
+                                        chatId: currentSettings.telegramChatId || 'N/A'
+                                    });
 
-        if (currentSettings.telegramBotToken && currentSettings.telegramChatId && domainsForAlert.length > 0) {
-            try {
-                console.log(`🔔 [Frontend Alert] Sending alert table with ${domainsForAlert.length} domains`);
-                addLog(`Sending Telegram alert table (${domainsForAlert.length} domains)...`, 'info');
+                                    if (currentSettings.telegramBotToken && currentSettings.telegramChatId && domainsForAlert.length > 0) {
+                                        try {
+                                            console.log(`🔔 [Frontend Alert] Sending alert table with ${domainsForAlert.length} domains`);
+                                            addLog(`Sending Telegram alert table (${domainsForAlert.length} domains)...`, 'info');
 
-                // Send combined table alert to default chat
-                const sent = await sendTelegramAlertTable(
-                    currentSettings.telegramBotToken,
-                    currentSettings.telegramChatId,
-                    domainsForAlert
-                );
+                                            // Send combined table alert to default chat
+                                            const sent = await sendTelegramAlertTable(
+                                                currentSettings.telegramBotToken,
+                                                currentSettings.telegramChatId,
+                                                domainsForAlert
+                                            );
 
-                if (sent) {
-                    console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully');
-                    addLog(`Telegram alert table sent (${domainsForAlert.length} domains)`, 'success');
-                } else {
-                    console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table (sent = false)');
-                    addLog('Failed to send Telegram alert table', 'error');
-                }
-            } catch (error) {
-                console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
-                addLog(`Error sending Telegram alert table: ${error instanceof Error ? error.message : String(error)}`, 'error');
-            }
-        } else {
-            const missingItems = [];
-            if (!currentSettings.telegramBotToken) missingItems.push('Bot Token');
-            if (!currentSettings.telegramChatId) missingItems.push('Chat ID');
-            if (domainsForAlert.length === 0) missingItems.push('Domains (empty)');
+                                            if (sent) {
+                                                console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully');
+                                                addLog(`Telegram alert table sent (${domainsForAlert.length} domains)`, 'success');
+                                            } else {
+                                                console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table (sent = false)');
+                                                addLog('Failed to send Telegram alert table', 'error');
+                                            }
+                                        } catch (error) {
+                                            console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
+                                            addLog(`Error sending Telegram alert table: ${error instanceof Error ? error.message : String(error)}`, 'error');
+                                        }
+                                    } else {
+                                        const missingItems = [];
+                                        if (!currentSettings.telegramBotToken) missingItems.push('Bot Token');
+                                        if (!currentSettings.telegramChatId) missingItems.push('Chat ID');
+                                        if (domainsForAlert.length === 0) missingItems.push('Domains (empty)');
 
-            console.warn('🔔 [Frontend Alert] ⚠️ Skipping alert - missing:', missingItems.join(', '));
-            addLog(`Skipping Telegram alert - missing: ${missingItems.join(', ')}`, 'info');
-        }
-    }, 100); // Wait 100ms for state to update
+                                        console.warn('🔔 [Frontend Alert] ⚠️ Skipping alert - missing:', missingItems.join(', '));
+                                        addLog(`Skipping Telegram alert - missing: ${missingItems.join(', ')}`, 'info');
+                                    }
+                                }, 100); // Wait 100ms for state to update
 
-    // Update nextScanTime in D1 after scan completes (shared storage)
-    const currentInterval = settingsRef.current.checkInterval;
-    if (currentInterval > 0) {
-        const intervalMs = currentInterval * 60 * 1000;
-        const nextScan = Date.now() + intervalMs;
+                                // Update nextScanTime in D1 after scan completes (shared storage)
+                                const currentInterval = settingsRef.current.checkInterval;
+                                if (currentInterval > 0) {
+                                    const intervalMs = currentInterval * 60 * 1000;
+                                    const nextScan = Date.now() + intervalMs;
 
-        // Save to Workers API (D1) - this is where we write nextScanTime
-        try {
-            const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
-            });
+                                    // Save to Workers API (D1) - this is where we write nextScanTime
+                                    try {
+                                        const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
+                                        });
 
-            if (saveResponse.ok) {
-                const saveData = await saveResponse.json();
-                // Use nextScanTime from response (confirmed saved to D1)
-                const confirmedNextScan = saveData.nextScanTime || nextScan;
-                nextScanTimeRef.current = confirmedNextScan;
-                setNextScanTime(confirmedNextScan);
-                console.log(`📅 Saved next scan time to D1 after manual scan: ${new Date(confirmedNextScan).toLocaleString()}`);
-            } else {
-                // Fallback to local time if save failed
-                nextScanTimeRef.current = nextScan;
-                setNextScanTime(nextScan);
-                console.error('Failed to save next scan time to D1, using local time');
-            }
-        } catch (saveError) {
-            console.error('Error saving next scan time to D1:', saveError);
-            // Fallback to local time on error
-            nextScanTimeRef.current = nextScan;
-            setNextScanTime(nextScan);
-        }
-    }
+                                        if (saveResponse.ok) {
+                                            const saveData = await saveResponse.json();
+                                            // Use nextScanTime from response (confirmed saved to D1)
+                                            const confirmedNextScan = saveData.nextScanTime || nextScan;
+                                            nextScanTimeRef.current = confirmedNextScan;
+                                            setNextScanTime(confirmedNextScan);
+                                            console.log(`📅 Saved next scan time to D1 after manual scan: ${new Date(confirmedNextScan).toLocaleString()}`);
+                                        } else {
+                                            // Fallback to local time if save failed
+                                            nextScanTimeRef.current = nextScan;
+                                            setNextScanTime(nextScan);
+                                            console.error('Failed to save next scan time to D1, using local time');
+                                        }
+                                    } catch (saveError) {
+                                        console.error('Error saving next scan time to D1:', saveError);
+                                        // Fallback to local time on error
+                                        nextScanTimeRef.current = nextScan;
+                                        setNextScanTime(nextScan);
+                                    }
+                                }
 
-    setLoading(false);
-    addLog('Scan complete.', 'success');
-    return;
-} else {
-    console.log('Results are older than trigger, waiting for new results...');
-}
+                                setLoading(false);
+                                addLog('Scan complete.', 'success');
+                                return;
+                            } else {
+                                console.log('Results are older than trigger, waiting for new results...');
+                            }
                         } else {
-    console.log('No results yet, waiting...');
-}
+                            console.log('No results yet, waiting...');
+                        }
 
-// If no new results yet, continue polling
-if (attempts < maxAttempts) {
-    setTimeout(pollForResults, 2000);
-} else {
-    addLog('⏱️ Timeout: Mobile app did not respond within 30 seconds.', 'error');
-    addLog('📱 Mobile app needs to poll /api/trigger-check every 30 seconds.', 'error');
-    addLog('💡 Please implement trigger polling in mobile app or check manually from mobile app.', 'error');
-    setLoading(false);
-}
+                        // If no new results yet, continue polling
+                        if (attempts < maxAttempts) {
+                            setTimeout(pollForResults, 2000);
+                        } else {
+                            addLog('⏱️ Timeout: Mobile app did not respond within 30 seconds.', 'error');
+                            addLog('📱 Using latest results from D1 instead...', 'info');
+                            
+                            // Load latest results from D1 when mobile app timeout
+                            try {
+                                const d1Response = await fetchResultsFromWorkers(workersUrl);
+                                
+                                if (d1Response.success && d1Response.results.length > 0) {
+                                    addLog(`Loaded ${d1Response.results.length} results from D1 (mobile app timeout)`, 'success');
+                                    
+                                    // Normalize hostname for matching
+                                    const normalizeHostname = (hostname: string): string => {
+                                        return hostname.toLowerCase().replace(/^www\./, '');
+                                    };
+                                    
+                                    // Group results by normalized hostname
+                                    const resultsByHostname = new Map<string, typeof d1Response.results>();
+                                    d1Response.results.forEach(result => {
+                                        const normalized = normalizeHostname(result.hostname);
+                                        if (!resultsByHostname.has(normalized)) {
+                                            resultsByHostname.set(normalized, []);
+                                        }
+                                        resultsByHostname.get(normalized)!.push(result);
+                                    });
+                                    
+                                    // Update domains with results from D1
+                                    setDomains(prev => prev.map(domain => {
+                                        const normalizedDomainHostname = normalizeHostname(domain.hostname);
+                                        const hostnameResults = resultsByHostname.get(normalizedDomainHostname);
+                                        
+                                        if (!hostnameResults || hostnameResults.length === 0) {
+                                            return domain;
+                                        }
+                                        
+                                        // Map ISP names
+                                        const ispMap: Record<string, ISP> = {
+                                            'Unknown': ISP.AIS,
+                                            'unknown': ISP.AIS,
+                                            'AIS': ISP.AIS,
+                                            'True': ISP.TRUE,
+                                            'TRUE': ISP.TRUE,
+                                            'true': ISP.TRUE,
+                                            'DTAC': ISP.TRUE,
+                                            'dtac': ISP.TRUE,
+                                            'NT': ISP.NT,
+                                            'nt': ISP.NT,
+                                            'Global (Google)': ISP.GLOBAL,
+                                            'Global': ISP.GLOBAL,
+                                        };
+                                        
+                                        // Group results by mapped ISP and get best result for each ISP
+                                        const resultsByMappedISP = new Map<ISP, typeof hostnameResults[0]>();
+                                        hostnameResults.forEach(workerResult => {
+                                            const mappedISP = ispMap[workerResult.isp_name] || ISP.AIS;
+                                            const existing = resultsByMappedISP.get(mappedISP);
+                                            
+                                            if (!existing) {
+                                                resultsByMappedISP.set(mappedISP, workerResult);
+                                            } else {
+                                                // Priority: 1) BLOCKED, 2) ISP name clarity, 3) Latest timestamp
+                                                if (workerResult.status === 'BLOCKED' && existing.status !== 'BLOCKED') {
+                                                    resultsByMappedISP.set(mappedISP, workerResult);
+                                                } else if (workerResult.status !== 'BLOCKED' && existing.status === 'BLOCKED') {
+                                                    // Keep existing BLOCKED
+                                                } else {
+                                                    const existingIsUnknown = existing.isp_name === 'Unknown' || existing.isp_name === 'unknown';
+                                                    const newIsUnknown = workerResult.isp_name === 'Unknown' || workerResult.isp_name === 'unknown';
+                                                    
+                                                    if (!newIsUnknown && existingIsUnknown) {
+                                                        resultsByMappedISP.set(mappedISP, workerResult);
+                                                    } else if (!newIsUnknown && !existingIsUnknown) {
+                                                        const existingTimestamp = existing.timestamp || 0;
+                                                        const newTimestamp = workerResult.timestamp || 0;
+                                                        if (newTimestamp > existingTimestamp) {
+                                                            resultsByMappedISP.set(mappedISP, workerResult);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        });
+                                        
+                                        // Convert Workers results to ISPResult format
+                                        const updatedResults = { ...domain.results };
+                                        resultsByMappedISP.forEach((workerResult, isp) => {
+                                            const ispName = workerResult.isp_name;
+                                            const isTrueOrDTAC = ispName === 'True' || ispName === 'TRUE' || ispName === 'true' ||
+                                                ispName === 'DTAC' || ispName === 'dtac' || isp === ISP.TRUE;
+                                            
+                                            if (isTrueOrDTAC) {
+                                                const slots = ['True', 'DTAC', ISP.TRUE, ISP.DTAC];
+                                                slots.forEach(slotKey => {
+                                                    if (updatedResults[slotKey]) {
+                                                        updatedResults[slotKey] = {
+                                                            isp: slotKey === 'True' ? ISP.TRUE : slotKey === 'DTAC' ? ISP.DTAC : slotKey,
+                                                            status: workerResult.status as Status,
+                                                            ip: workerResult.ip || '',
+                                                            latency: workerResult.latency || 0,
+                                                            details: `From D1 (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                            source: 'server',
+                                                            deviceId: workerResult.device_id,
+                                                            timestamp: workerResult.timestamp,
+                                                        };
+                                                    }
+                                                });
+                                            } else {
+                                                if (updatedResults[isp]) {
+                                                    updatedResults[isp] = {
+                                                        isp: isp,
+                                                        status: workerResult.status as Status,
+                                                        ip: workerResult.ip || '',
+                                                        latency: workerResult.latency || 0,
+                                                        details: `From D1 (${ispName}) - ${new Date(workerResult.timestamp).toLocaleString()}`,
+                                                        source: 'server',
+                                                        deviceId: workerResult.device_id,
+                                                        timestamp: workerResult.timestamp,
+                                                    };
+                                                }
+                                            }
+                                        });
+                                        
+                                        const latestTimestamp = Math.max(...hostnameResults.map(r => r.timestamp));
+                                        
+                                        return {
+                                            ...domain,
+                                            results: updatedResults,
+                                            lastCheck: latestTimestamp,
+                                        };
+                                    }));
+                                    
+                                    // Send Telegram alert with results from D1
+                                    const currentSettings = settingsRef.current;
+                                    if (currentSettings.telegramBotToken && currentSettings.telegramChatId) {
+                                        setTimeout(async () => {
+                                            const domainsForAlert = domainsRef.current;
+                                            try {
+                                                console.log(`🔔 [Frontend Alert] Sending alert table with ${domainsForAlert.length} domains (from D1 after timeout)`);
+                                                addLog(`Sending Telegram alert table (${domainsForAlert.length} domains from D1)...`, 'info');
+                                                
+                                                const sent = await sendTelegramAlertTable(
+                                                    currentSettings.telegramBotToken,
+                                                    currentSettings.telegramChatId,
+                                                    domainsForAlert
+                                                );
+                                                
+                                                if (sent) {
+                                                    console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully (from D1)');
+                                                    addLog(`Telegram alert table sent (${domainsForAlert.length} domains from D1)`, 'success');
+                                                } else {
+                                                    console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table');
+                                                    addLog('Failed to send Telegram alert table', 'error');
+                                                }
+                                            } catch (error) {
+                                                console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
+                                                addLog(`Error sending Telegram alert table: ${error instanceof Error ? error.message : String(error)}`, 'error');
+                                            }
+                                        }, 100);
+                                    }
+                                } else {
+                                    addLog('No results in D1 available', 'info');
+                                }
+                            } catch (d1Error) {
+                                console.error('Error loading results from D1 after timeout:', d1Error);
+                                addLog('Failed to load results from D1', 'error');
+                            }
+                            
+                            setLoading(false);
+                        }
                     } catch (error) {
-    console.error('Error polling for results:', error);
-    if (attempts < maxAttempts) {
-        setTimeout(pollForResults, 2000);
-    } else {
-        addLog('Failed to get results from mobile app', 'error');
-        setLoading(false);
-    }
-}
+                        console.error('Error polling for results:', error);
+                        if (attempts < maxAttempts) {
+                            setTimeout(pollForResults, 2000);
+                        } else {
+                            addLog('Failed to get results from mobile app', 'error');
+                            setLoading(false);
+                        }
+                    }
                 };
 
-// Start polling after 2 seconds
-setTimeout(pollForResults, 2000);
+                // Start polling after 2 seconds
+                setTimeout(pollForResults, 2000);
             } catch (error) {
-    console.error('Error triggering mobile app:', error);
-    addLog('Failed to trigger mobile app check', 'error');
-    addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
-    setLoading(false);
-}
+                console.error('Error triggering mobile app:', error);
+                addLog('Failed to trigger mobile app check', 'error');
+                addLog('Please check mobile app connection or trigger manually from mobile app', 'error');
+                setLoading(false);
+            }
         } else {
-    // No Workers URL configured
-    addLog('Workers URL not configured. Please set Workers URL in Settings.', 'error');
-    addLog('Mobile app integration requires Workers URL to be configured.', 'error');
-    setLoading(false);
-}
+            // No Workers URL configured
+            addLog('Workers URL not configured. Please set Workers URL in Settings.', 'error');
+            addLog('Mobile app integration requires Workers URL to be configured.', 'error');
+            setLoading(false);
+        }
     }, [loading, checkSingleDomain, addLog]);
 
-// Scheduler
-useEffect(() => {
-    if (!loadedRef.current || domains.length === 0) return;
+    // Scheduler
+    useEffect(() => {
+        if (!loadedRef.current || domains.length === 0) return;
 
-    // Skip auto-scan if KV limit is exceeded (but we're using D1 now, so this should not happen)
-    // Note: D1 doesn't have write limits like KV, so this check is mainly for backward compatibility
-    // Reset KV limit check since we're using D1 now
-    if (kvLimitExceededRef.current) {
-        console.log('⏸️ Auto-scan paused - KV limit exceeded (using D1 now, resetting...)');
-        // Reset immediately since we're using D1 now
-        kvLimitExceededRef.current = false;
-        addLog('✅ KV limit check reset - Using D1 now (no write limits)', 'info');
-    }
-
-    // Removed: Auto-trigger scan on mount
-    // Now we just load existing results from Workers API (D1) instead of triggering a new scan
-    // Users can manually trigger a scan using the "RUN FULL SCAN" button if needed
-}, [loading, settings.checkInterval, domains.length]); // Dependencies
-
-// Shared auto-scan timer (sync with Workers API to avoid duplicate triggers)
-useEffect(() => {
-    if (!loadedRef.current || settings.checkInterval <= 0) {
-        setNextScanTime(null);
-        return;
-    }
-
-    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
-    if (!workersUrl) {
-        console.log('Workers URL not configured, using local timer');
-        // Fallback to local timer if Workers URL not configured
-        const intervalMs = settings.checkInterval * 60 * 1000;
-        const nextScan = Date.now() + intervalMs;
-        setNextScanTime(nextScan);
-        const intervalId = setInterval(() => {
-            addLog('Auto-scan interval reached', 'info');
-            runAllChecks();
-            setNextScanTime(Date.now() + intervalMs);
-        }, intervalMs);
-        return () => clearInterval(intervalId);
-    }
-
-    let isChecking = false; // Prevent concurrent checks
-
-    // Get shared next scan time from Workers API (D1) - READ ONLY, DO NOT CREATE NEW ONE
-    // Sync next scan time from D1 - ONLY READ, don't create new one
-    // nextScanTime should only be created when:
-    // 1. RUN FULL SCAN completes (saves to D1)
-    // 2. Auto-scan timer triggers (saves to D1)
-    const syncNextScanTime = async () => {
-        try {
-            const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
-            if (response.ok) {
-                const data = await response.json();
-                if (data.nextScanTime && data.nextScanTime > Date.now()) {
-                    // Use shared next scan time from D1 (still valid)
-                    nextScanTimeRef.current = data.nextScanTime;
-                    setNextScanTime(data.nextScanTime);
-                    console.log(`📅 Using shared next scan time from D1: ${new Date(data.nextScanTime).toLocaleString()}`);
-                } else {
-                    // No shared time or expired - don't create new one, just set to null
-                    // Will be created when RUN FULL SCAN or auto-scan runs
-                    nextScanTimeRef.current = null;
-                    setNextScanTime(null);
-                    console.log('📅 No valid next scan time in D1 (will be set when scan runs)');
-                }
-            } else {
-                // API error - don't create new one, just set to null
-                nextScanTimeRef.current = null;
-                setNextScanTime(null);
-                console.log('📅 Failed to fetch next scan time from D1');
-            }
-        } catch (error) {
-            console.error('Error syncing next scan time:', error);
-            // Don't create new one on error - just set to null
-            nextScanTimeRef.current = null;
-            setNextScanTime(null);
+        // Skip auto-scan if KV limit is exceeded (but we're using D1 now, so this should not happen)
+        // Note: D1 doesn't have write limits like KV, so this check is mainly for backward compatibility
+        // Reset KV limit check since we're using D1 now
+        if (kvLimitExceededRef.current) {
+            console.log('⏸️ Auto-scan paused - KV limit exceeded (using D1 now, resetting...)');
+            // Reset immediately since we're using D1 now
+            kvLimitExceededRef.current = false;
+            addLog('✅ KV limit check reset - Using D1 now (no write limits)', 'info');
         }
-    };
 
-    // Sync immediately - only read from D1, don't create new one
-    syncNextScanTime();
+        // Removed: Auto-trigger scan on mount
+        // Now we just load existing results from Workers API (D1) instead of triggering a new scan
+        // Users can manually trigger a scan using the "RUN FULL SCAN" button if needed
+    }, [loading, settings.checkInterval, domains.length]); // Dependencies
 
-    // Check every 10 seconds if it's time to scan
-    const checkInterval = setInterval(async () => {
-        if (isChecking) return; // Prevent concurrent checks
+    // Shared auto-scan timer (sync with Workers API to avoid duplicate triggers)
+    useEffect(() => {
+        if (!loadedRef.current || settings.checkInterval <= 0) {
+            setNextScanTime(null);
+            return;
+        }
 
-        // Use ref value to avoid dependency on state
-        const currentNextScan = nextScanTimeRef.current;
-        if (currentNextScan && Date.now() >= currentNextScan) {
-            isChecking = true;
+        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+        if (!workersUrl) {
+            console.log('Workers URL not configured, using local timer');
+            // Fallback to local timer if Workers URL not configured
+            const intervalMs = settings.checkInterval * 60 * 1000;
+            const nextScan = Date.now() + intervalMs;
+            setNextScanTime(nextScan);
+            const intervalId = setInterval(() => {
+                addLog('Auto-scan interval reached', 'info');
+                runAllChecks();
+                setNextScanTime(Date.now() + intervalMs);
+            }, intervalMs);
+            return () => clearInterval(intervalId);
+        }
 
-            // Time to scan - check if someone else already triggered
+        let isChecking = false; // Prevent concurrent checks
+
+        // Get shared next scan time from Workers API (D1) - READ ONLY, DO NOT CREATE NEW ONE
+        // Sync next scan time from D1 - ONLY READ, don't create new one
+        // nextScanTime should only be created when:
+        // 1. RUN FULL SCAN completes (saves to D1)
+        // 2. Auto-scan timer triggers (saves to D1)
+        const syncNextScanTime = async () => {
             try {
                 const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.nextScanTime && data.nextScanTime > Date.now()) {
-                        // Someone else already updated, use their time
+                        // Use shared next scan time from D1 (still valid)
                         nextScanTimeRef.current = data.nextScanTime;
                         setNextScanTime(data.nextScanTime);
-                        console.log('⏭️ Scan already triggered by another user, skipping');
-                        isChecking = false;
-                        return;
+                        console.log(`📅 Using shared next scan time from D1: ${new Date(data.nextScanTime).toLocaleString()}`);
+                    } else {
+                        // No shared time or expired - don't create new one, just set to null
+                        // Will be created when RUN FULL SCAN or auto-scan runs
+                        nextScanTimeRef.current = null;
+                        setNextScanTime(null);
+                        console.log('📅 No valid next scan time in D1 (will be set when scan runs)');
                     }
+                } else {
+                    // API error - don't create new one, just set to null
+                    nextScanTimeRef.current = null;
+                    setNextScanTime(null);
+                    console.log('📅 Failed to fetch next scan time from D1');
                 }
             } catch (error) {
-                console.error('Error checking next scan time:', error);
+                console.error('Error syncing next scan time:', error);
+                // Don't create new one on error - just set to null
+                nextScanTimeRef.current = null;
+                setNextScanTime(null);
             }
+        };
 
-            // Trigger scan and update next scan time in D1 (shared storage)
-            addLog('Auto-scan interval reached', 'info');
-            await runAllChecks();
+        // Sync immediately - only read from D1, don't create new one
+        syncNextScanTime();
 
-            // Use ref to get current checkInterval (avoid dependency)
-            const currentInterval = settingsRef.current.checkInterval;
-            const intervalMs = currentInterval * 60 * 1000;
-            const nextScan = Date.now() + intervalMs;
+        // Check every 10 seconds if it's time to scan
+        const checkInterval = setInterval(async () => {
+            if (isChecking) return; // Prevent concurrent checks
 
-            // Save to Workers API (D1) - this is the ONLY place we write nextScanTime
-            try {
-                const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
-                });
+            // Use ref value to avoid dependency on state
+            const currentNextScan = nextScanTimeRef.current;
+            if (currentNextScan && Date.now() >= currentNextScan) {
+                isChecking = true;
 
-                if (saveResponse.ok) {
-                    const saveData = await saveResponse.json();
-                    // Use nextScanTime from response (confirmed saved to D1)
-                    const confirmedNextScan = saveData.nextScanTime || nextScan;
-                    nextScanTimeRef.current = confirmedNextScan;
-                    setNextScanTime(confirmedNextScan);
-                    console.log(`📅 Saved new shared next scan time to D1: ${new Date(confirmedNextScan).toLocaleString()}`);
-                } else {
-                    // Fallback to local time if save failed
+                // Time to scan - check if someone else already triggered
+                try {
+                    const response = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.nextScanTime && data.nextScanTime > Date.now()) {
+                            // Someone else already updated, use their time
+                            nextScanTimeRef.current = data.nextScanTime;
+                            setNextScanTime(data.nextScanTime);
+                            console.log('⏭️ Scan already triggered by another user, skipping');
+                            isChecking = false;
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking next scan time:', error);
+                }
+
+                // Trigger scan and update next scan time in D1 (shared storage)
+                addLog('Auto-scan interval reached', 'info');
+                await runAllChecks();
+
+                // Use ref to get current checkInterval (avoid dependency)
+                const currentInterval = settingsRef.current.checkInterval;
+                const intervalMs = currentInterval * 60 * 1000;
+                const nextScan = Date.now() + intervalMs;
+
+                // Save to Workers API (D1) - this is the ONLY place we write nextScanTime
+                try {
+                    const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
+                    });
+
+                    if (saveResponse.ok) {
+                        const saveData = await saveResponse.json();
+                        // Use nextScanTime from response (confirmed saved to D1)
+                        const confirmedNextScan = saveData.nextScanTime || nextScan;
+                        nextScanTimeRef.current = confirmedNextScan;
+                        setNextScanTime(confirmedNextScan);
+                        console.log(`📅 Saved new shared next scan time to D1: ${new Date(confirmedNextScan).toLocaleString()}`);
+                    } else {
+                        // Fallback to local time if save failed
+                        nextScanTimeRef.current = nextScan;
+                        setNextScanTime(nextScan);
+                        console.error('Failed to save next scan time to D1, using local time');
+                    }
+                } catch (error) {
+                    console.error('Error saving next scan time to D1:', error);
+                    // Fallback to local time on error
                     nextScanTimeRef.current = nextScan;
                     setNextScanTime(nextScan);
-                    console.error('Failed to save next scan time to D1, using local time');
                 }
-            } catch (error) {
-                console.error('Error saving next scan time to D1:', error);
-                // Fallback to local time on error
-                nextScanTimeRef.current = nextScan;
-                setNextScanTime(nextScan);
+
+                isChecking = false;
             }
+        }, 10000); // Check every 10 seconds
 
-            isChecking = false;
-        }
-    }, 10000); // Check every 10 seconds
+        return () => clearInterval(checkInterval);
+    }, [loadedRef.current, settings.checkInterval, runAllChecks, addLog]);
 
-    return () => clearInterval(checkInterval);
-}, [loadedRef.current, settings.checkInterval, runAllChecks, addLog]);
+    // Show loading while checking authentication
+    if (isAuthenticated === null) {
+        return (
+            <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-16 h-16 border-4 border-neon-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-400">Checking authentication...</p>
+                </div>
+            </div>
+        );
+    }
 
-// Show loading while checking authentication
-if (isAuthenticated === null) {
+    // Redirect to login if not authenticated
+    if (isAuthenticated === false) {
+        return null; // Will redirect via useEffect
+    }
+
     return (
-        <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black flex items-center justify-center">
-            <div className="text-center">
-                <div className="w-16 h-16 border-4 border-neon-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-gray-400">Checking authentication...</p>
-            </div>
-        </div>
-    );
-}
-
-// Redirect to login if not authenticated
-if (isAuthenticated === false) {
-    return null; // Will redirect via useEffect
-}
-
-return (
-    <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
-        <header className="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
-                <div className="flex items-center mb-4 md:mb-0">
-                    <div className="w-10 h-10 bg-neon-blue/10 rounded-full flex items-center justify-center mr-3 border border-neon-blue shadow-[0_0_15px_rgba(0,243,255,0.3)]">
-                        <Shield className="w-6 h-6 text-neon-blue" />
+        <div className="min-h-screen font-sans selection:bg-neon-blue selection:text-black">
+            <header className="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
+                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
+                    <div className="flex items-center mb-4 md:mb-0">
+                        <div className="w-10 h-10 bg-neon-blue/10 rounded-full flex items-center justify-center mr-3 border border-neon-blue shadow-[0_0_15px_rgba(0,243,255,0.3)]">
+                            <Shield className="w-6 h-6 text-neon-blue" />
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-bold text-white tracking-wider">SENTINEL <span className="text-neon-blue">DNS</span></h1>
+                            <p className="text-xs text-gray-500 font-mono">CLOUD EDGE MONITOR</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-white tracking-wider">SENTINEL <span className="text-neon-blue">DNS</span></h1>
-                        <p className="text-xs text-gray-500 font-mono">CLOUD EDGE MONITOR</p>
-                    </div>
-                </div>
 
-                <nav className="flex space-x-2 items-center">
-                    <div className="flex space-x-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
+                    <nav className="flex space-x-2 items-center">
+                        <div className="flex space-x-2 bg-gray-950 p-1 rounded-lg border border-gray-800">
+                            <button
+                                onClick={() => setActiveTab('dashboard')}
+                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <Activity className="w-4 h-4 inline mr-2" />
+                                Dashboard
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('settings')}
+                                className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <Terminal className="w-4 h-4 inline mr-2" />
+                                Settings
+                            </button>
+                        </div>
                         <button
-                            onClick={() => setActiveTab('dashboard')}
-                            className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
-                        >
-                            <Activity className="w-4 h-4 inline mr-2" />
-                            Dashboard
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('settings')}
-                            className={`px-4 py-2 rounded text-sm font-medium transition-all ${activeTab === 'settings' ? 'bg-gray-800 text-neon-blue shadow-md' : 'text-gray-400 hover:text-white'}`}
-                        >
-                            <Terminal className="w-4 h-4 inline mr-2" />
-                            Settings
-                        </button>
-                    </div>
-                    <button
-                        onClick={async () => {
-                            const token = localStorage.getItem('auth_token');
-                            if (token) {
-                                try {
-                                    const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
-                                    if (workersUrl) {
-                                        await fetch(`${workersUrl}/api/auth/logout`, {
-                                            method: 'POST',
-                                            headers: {
-                                                'Authorization': `Bearer ${token}`,
-                                                'Content-Type': 'application/json',
-                                            },
-                                        });
+                            onClick={async () => {
+                                const token = localStorage.getItem('auth_token');
+                                if (token) {
+                                    try {
+                                        const workersUrl = process.env.NEXT_PUBLIC_WORKERS_URL || settingsRef.current.workersUrl || settingsRef.current.backendUrl;
+                                        if (workersUrl) {
+                                            await fetch(`${workersUrl}/api/auth/logout`, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${token}`,
+                                                    'Content-Type': 'application/json',
+                                                },
+                                            });
+                                        }
+                                    } catch (error) {
+                                        console.error('Logout error:', error);
                                     }
-                                } catch (error) {
-                                    console.error('Logout error:', error);
                                 }
-                            }
-                            localStorage.removeItem('auth_token');
-                            localStorage.removeItem('auth_user');
-                            window.location.href = '/login';
-                        }}
-                        className="ml-2 px-4 py-2 rounded text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all flex items-center gap-2"
-                        title="Logout"
-                    >
-                        <LogOut className="w-4 h-4" />
-                        <span>Logout</span>
-                    </button>
-                </nav>
-            </div>
-        </header>
-
-        <main className="max-w-7xl mx-auto p-4 md:p-6">
-            {activeTab === 'settings' ? (
-                <div className="max-w-2xl mx-auto animate-fadeIn">
-                    <SettingsPanel settings={settings} onSave={setSettings} />
+                                localStorage.removeItem('auth_token');
+                                localStorage.removeItem('auth_user');
+                                window.location.href = '/login';
+                            }}
+                            className="ml-2 px-4 py-2 rounded text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all flex items-center gap-2"
+                            title="Logout"
+                        >
+                            <LogOut className="w-4 h-4" />
+                            <span>Logout</span>
+                        </button>
+                    </nav>
                 </div>
-            ) : (
-                <div className="space-y-6 animate-fadeIn">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="col-span-2 space-y-4">
-                            <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-lg">
-                                <form onSubmit={handleAddDomain} className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={newUrl}
-                                        onChange={(e) => setNewUrl(e.target.value)}
-                                        placeholder="https://example.com"
-                                        className="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-neon-blue focus:outline-none transition-colors"
-                                    />
-                                    <button type="submit" className="bg-neon-blue hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded flex items-center transition-colors">
-                                        <Plus className="w-5 h-5" />
-                                    </button>
-                                </form>
+            </header>
+
+            <main className="max-w-7xl mx-auto p-4 md:p-6">
+                {activeTab === 'settings' ? (
+                    <div className="max-w-2xl mx-auto animate-fadeIn">
+                        <SettingsPanel settings={settings} onSave={setSettings} />
+                    </div>
+                ) : (
+                    <div className="space-y-6 animate-fadeIn">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <div className="col-span-2 space-y-4">
+                                <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-lg">
+                                    <form onSubmit={handleAddDomain} className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newUrl}
+                                            onChange={(e) => setNewUrl(e.target.value)}
+                                            placeholder="https://example.com"
+                                            className="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-white focus:border-neon-blue focus:outline-none transition-colors"
+                                        />
+                                        <button type="submit" className="bg-neon-blue hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded flex items-center transition-colors">
+                                            <Plus className="w-5 h-5" />
+                                        </button>
+                                    </form>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {domains.map(domain => (
+                                        <DomainCard
+                                            key={domain.id}
+                                            domain={domain}
+                                            onDelete={handleDeleteDomain}
+                                            onRefresh={checkSingleDomain}
+                                            onUpdate={handleUpdateDomain}
+                                        />
+                                    ))}
+                                    {domains.length === 0 && (
+                                        <div className="text-center py-10 text-gray-500 border border-dashed border-gray-800 rounded-lg">
+                                            No domains monitored. Add one above.
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="space-y-4">
-                                {domains.map(domain => (
-                                    <DomainCard
-                                        key={domain.id}
-                                        domain={domain}
-                                        onDelete={handleDeleteDomain}
-                                        onRefresh={checkSingleDomain}
-                                        onUpdate={handleUpdateDomain}
-                                    />
-                                ))}
-                                {domains.length === 0 && (
-                                    <div className="text-center py-10 text-gray-500 border border-dashed border-gray-800 rounded-lg">
-                                        No domains monitored. Add one above.
+                                <div className="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-lg">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">Status Control</h3>
+                                        {loading && <Activity className="w-4 h-4 text-neon-blue animate-pulse" />}
                                     </div>
-                                )}
-                            </div>
-                        </div>
 
-                        <div className="space-y-4">
-                            <div className="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-lg">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">Status Control</h3>
-                                    {loading && <Activity className="w-4 h-4 text-neon-blue animate-pulse" />}
-                                </div>
+                                    <button
+                                        onClick={() => runAllChecks()}
+                                        disabled={loading || domains.length === 0}
+                                        className={`w-full py-4 rounded font-bold text-center mb-4 transition-all flex items-center justify-center ${loading
+                                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                            : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
+                                            }`}
+                                    >
+                                        {loading ? <span className="animate-pulse">SCANNING...</span> : <><Play className="w-4 h-4 mr-2 fill-current" /> RUN FULL SCAN</>}
+                                    </button>
 
-                                <button
-                                    onClick={() => runAllChecks()}
-                                    disabled={loading || domains.length === 0}
-                                    className={`w-full py-4 rounded font-bold text-center mb-4 transition-all flex items-center justify-center ${loading
-                                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                        : 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]'
-                                        }`}
-                                >
-                                    {loading ? <span className="animate-pulse">SCANNING...</span> : <><Play className="w-4 h-4 mr-2 fill-current" /> RUN FULL SCAN</>}
-                                </button>
-
-                                <div className="space-y-3 pt-4 border-t border-gray-700">
-                                    <div className="flex justify-between text-xs items-center">
-                                        <span className="text-gray-400">Interval:</span>
-                                        <span className="text-neon-blue font-mono">
-                                            {settings.checkInterval >= 1440 ? `${(settings.checkInterval / 60).toFixed(0)} Hours` : `${settings.checkInterval} Mins`}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-xs items-center">
-                                        <span className="text-gray-400">Auto-Scan:</span>
-                                        <button
-                                            onClick={() => {
-                                                if (settings.checkInterval > 0) {
-                                                    // Pause: set to 0
-                                                    setSettings(prev => ({ ...prev, checkInterval: 0 }));
-                                                    addLog('Auto-scan paused', 'info');
-                                                } else {
-                                                    // Resume: set to default 6 hours
-                                                    setSettings(prev => ({ ...prev, checkInterval: 360 }));
-                                                    addLog('Auto-scan resumed (6 hours interval)', 'success');
-                                                }
-                                            }}
-                                            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${settings.checkInterval > 0
-                                                ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/50'
-                                                : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600'
-                                                }`}
-                                            title={settings.checkInterval > 0 ? 'Click to pause auto-scan' : 'Click to resume auto-scan'}
-                                        >
-                                            {settings.checkInterval > 0 ? 'ON' : 'OFF'}
-                                        </button>
-                                    </div>
-                                    <div className="flex justify-between text-xs items-center">
-                                        <span className="text-gray-400">Next Auto-Scan:</span>
-                                        <span className="text-gray-200 font-mono flex items-center">
-                                            <Clock className="w-3 h-3 mr-1 text-gray-500" />
-                                            {settings.checkInterval > 0 && nextScanTime
-                                                ? new Date(nextScanTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-                                                : 'Paused'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-gray-900 p-4 rounded-lg border border-gray-800 h-[400px] flex flex-col shadow-inner">
-                                <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center">
-                                    <Terminal className="w-4 h-4 mr-2" />
-                                    System Logs
-                                </h3>
-                                <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs custom-scrollbar pr-2">
-                                    {logs.map(log => (
-                                        <div key={log.id} className="border-b border-gray-800 pb-1 last:border-0">
-                                            <span className="text-gray-600 inline-block w-[70px]">
-                                                {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    <div className="space-y-3 pt-4 border-t border-gray-700">
+                                        <div className="flex justify-between text-xs items-center">
+                                            <span className="text-gray-400">Interval:</span>
+                                            <span className="text-neon-blue font-mono">
+                                                {settings.checkInterval >= 1440 ? `${(settings.checkInterval / 60).toFixed(0)} Hours` : `${settings.checkInterval} Mins`}
                                             </span>
-                                            <span className={`ml-2 ${log.type === 'error' ? 'text-red-500' :
-                                                log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
-                                                    log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
-                                                }`}>{log.message}</span>
                                         </div>
-                                    ))}
-                                    {logs.length === 0 && <span className="text-gray-700 italic">Waiting for activity...</span>}
+                                        <div className="flex justify-between text-xs items-center">
+                                            <span className="text-gray-400">Auto-Scan:</span>
+                                            <button
+                                                onClick={() => {
+                                                    if (settings.checkInterval > 0) {
+                                                        // Pause: set to 0
+                                                        setSettings(prev => ({ ...prev, checkInterval: 0 }));
+                                                        addLog('Auto-scan paused', 'info');
+                                                    } else {
+                                                        // Resume: set to default 6 hours
+                                                        setSettings(prev => ({ ...prev, checkInterval: 360 }));
+                                                        addLog('Auto-scan resumed (6 hours interval)', 'success');
+                                                    }
+                                                }}
+                                                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${settings.checkInterval > 0
+                                                    ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/50'
+                                                    : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600'
+                                                    }`}
+                                                title={settings.checkInterval > 0 ? 'Click to pause auto-scan' : 'Click to resume auto-scan'}
+                                            >
+                                                {settings.checkInterval > 0 ? 'ON' : 'OFF'}
+                                            </button>
+                                        </div>
+                                        <div className="flex justify-between text-xs items-center">
+                                            <span className="text-gray-400">Next Auto-Scan:</span>
+                                            <span className="text-gray-200 font-mono flex items-center">
+                                                <Clock className="w-3 h-3 mr-1 text-gray-500" />
+                                                {settings.checkInterval > 0 && nextScanTime
+                                                    ? new Date(nextScanTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+                                                    : 'Paused'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 p-4 rounded-lg border border-gray-800 h-[400px] flex flex-col shadow-inner">
+                                    <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center">
+                                        <Terminal className="w-4 h-4 mr-2" />
+                                        System Logs
+                                    </h3>
+                                    <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs custom-scrollbar pr-2">
+                                        {logs.map(log => (
+                                            <div key={log.id} className="border-b border-gray-800 pb-1 last:border-0">
+                                                <span className="text-gray-600 inline-block w-[70px]">
+                                                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                </span>
+                                                <span className={`ml-2 ${log.type === 'error' ? 'text-red-500' :
+                                                    log.type === 'alert' ? 'text-neon-red font-bold animate-pulse' :
+                                                        log.type === 'success' ? 'text-neon-green' : 'text-gray-300'
+                                                    }`}>{log.message}</span>
+                                            </div>
+                                        ))}
+                                        {logs.length === 0 && <span className="text-gray-700 italic">Waiting for activity...</span>}
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </main>
-    </div>
-);
+                )}
+            </main>
+        </div>
+    );
 }
