@@ -2049,6 +2049,9 @@ async function sendTelegramAlertTable(
 ): Promise<boolean> {
     if (!botToken || !chatId || allDomains.length === 0) return false;
 
+    console.log(`🔔 [Alert] sendTelegramAlertTable called with ${allDomains.length} domains for chat ${chatId}`);
+    console.log(`🔔 [Alert] Domain names:`, allDomains.map(d => d.hostname).join(', '));
+
     // Helper function to find ISP status
     const findISPStatus = (results: Record<string, { status: string }>, keys: string[]): string | null => {
         for (const key of keys) {
@@ -2114,7 +2117,7 @@ async function sendTelegramAlertTable(
 
     // ลองสร้างข้อความทั้งหมดก่อน (รวมทุกโดเมน - ทั้งที่บล็อกและไม่บล็อก)
     const fullMessage = createTableForDomains(allDomains);
-    
+
     // ถ้าข้อความไม่เกิน limit ส่งเลย
     if (fullMessage.length <= TELEGRAM_LIMIT) {
         try {
@@ -2123,7 +2126,7 @@ async function sendTelegramAlertTable(
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-            },
+                },
                 body: JSON.stringify({
                     chat_id: chatId,
                     text: fullMessage,
@@ -2401,6 +2404,7 @@ async function checkAndSendAlerts(env: Env): Promise<void> {
 
             if (shouldSend) {
                 console.log(`🔔 [Alert] 📤 SENDING alert table to ${chatId} (${domainsForThisChat.length} domains, interval: ${alertInterval} minutes)`);
+                console.log(`🔔 [Alert] Domain list for ${chatId}:`, domainsForThisChat.map(d => d.hostname).join(', '));
                 sendPromises.push(
                     sendTelegramAlertTable(telegramBotToken, chatId, domainsForThisChat)
                         .then(async (sent) => {
