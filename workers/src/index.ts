@@ -235,6 +235,11 @@ export default {
             return handleLogout(request, env, corsHeaders);
         }
 
+        // Admin endpoint: Clear all custom Telegram chat IDs
+        if (url.pathname === '/api/admin/clear-custom-chat-ids' && request.method === 'POST') {
+            return handleClearCustomChatIds(request, env, corsHeaders);
+        }
+
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
     },
 };
@@ -942,6 +947,37 @@ async function handleLogout(
         }, 200, corsHeaders);
     } catch (error: any) {
         console.error('Logout error:', error);
+        return jsonResponse(
+            { error: error.message || 'Internal server error' },
+            500,
+            corsHeaders
+        );
+    }
+}
+
+// Admin endpoint: Clear all custom Telegram chat IDs from domains
+async function handleClearCustomChatIds(
+    request: Request,
+    env: Env,
+    corsHeaders: Record<string, string>
+): Promise<Response> {
+    try {
+        console.log('🧹 Clearing all custom Telegram chat IDs from domains...');
+
+        // Update all domains to set telegram_chat_id to NULL
+        const result = await env.DB.prepare(
+            "UPDATE domains SET telegram_chat_id = NULL WHERE telegram_chat_id IS NOT NULL"
+        ).run();
+
+        console.log(`✅ Cleared custom chat IDs from ${result.meta.changes || 0} domains`);
+
+        return jsonResponse({
+            success: true,
+            message: `Cleared custom chat IDs from ${result.meta.changes || 0} domains`,
+            affectedRows: result.meta.changes || 0,
+        }, 200, corsHeaders);
+    } catch (error: any) {
+        console.error('Clear custom chat IDs error:', error);
         return jsonResponse(
             { error: error.message || 'Internal server error' },
             500,
