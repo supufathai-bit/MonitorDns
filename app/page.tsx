@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Domain, ISP, Status, AppSettings, LogEntry, ISPResult } from '../types';
 import { checkDomainHealth, getHostname } from '../services/dnsService';
-import { sendTelegramAlert } from '../services/telegramService';
+// Telegram alerts are now sent by Workers Cron job (not from frontend)
 import { fetchResultsFromWorkers, fetchDomainResults } from '../services/resultsService';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { DomainCard } from '../components/DomainCard';
@@ -1207,42 +1207,11 @@ export default function Home() {
         .filter(r => r.status === Status.BLOCKED)
         .map(r => r.isp);
 
-    if (blockedISPs.length > 0) {
+                                    if (blockedISPs.length > 0) {
         addLog(`${currentDomain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
         
-                                        // Send Telegram alert to both chat IDs:
-                                        // 1. Domain's custom chat ID (ห้องแยกแต่ละลิงก์)
-                                        // 2. Settings chat ID (ห้องรวม)
-                                        const chatIdsToSend: string[] = [];
-                                        
-                                        // Add domain's custom chat ID if available
-                                        if (currentDomain.telegramChatId) {
-                                            chatIdsToSend.push(currentDomain.telegramChatId);
-                                        }
-                                        
-                                        // Add settings chat ID (ห้องรวม) if available and different from domain chat ID
-                                        if (currentSettings.telegramChatId && currentSettings.telegramChatId !== currentDomain.telegramChatId) {
-                                            chatIdsToSend.push(currentSettings.telegramChatId);
-                                        }
-
-                                        if (currentSettings.telegramBotToken && chatIdsToSend.length > 0) {
-                                            // Send to all chat IDs
-                                            Promise.all(chatIdsToSend.map(chatId => 
-                                                sendTelegramAlert(currentSettings.telegramBotToken, chatId, currentDomain, blockedISPs)
-                                                    .then(sent => ({ chatId, sent }))
-                                                    .catch(error => ({ chatId, sent: false, error }))
-                                            )).then(results => {
-                                                const successCount = results.filter(r => r.sent).length;
-                                                if (successCount > 0) {
-                                                    const chatIdSources = results.filter(r => r.sent).map(r => 
-                                                        r.chatId === currentDomain.telegramChatId ? 'custom chat' : 'default chat'
-                                                    );
-                                                    addLog(`Telegram alert sent to ${chatIdSources.join(' and ')}`, 'success');
-                                                }
-                                            }).catch(error => {
-                                                console.error('Error sending Telegram alerts:', error);
-                });
-        }
+                                        // Note: Telegram alerts are now sent by Workers Cron job (not from frontend)
+                                        // Workers will send combined table alerts for all domains at configured intervals
     } else {
                                         addLog(`${currentDomain.hostname}: Check complete`, 'success');
                                     }
@@ -1570,47 +1539,8 @@ export default function Home() {
                                         hasBlockedDomains = true;
                                         addLog(`${domain.hostname} BLOCKED on ${blockedISPs.join(', ')}`, 'alert');
 
-                                        // Send Telegram alert to both chat IDs:
-                                        // 1. Domain's custom chat ID (ห้องแยกแต่ละลิงก์)
-                                        // 2. Settings chat ID (ห้องรวม)
-                                        const currentSettings = settingsRef.current;
-                                        const chatIdsToSend: string[] = [];
-                                        
-                                        // Add domain's custom chat ID if available
-                                        if (domain.telegramChatId) {
-                                            chatIdsToSend.push(domain.telegramChatId);
-                                        }
-                                        
-                                        // Add settings chat ID (ห้องรวม) if available and different from domain chat ID
-                                        if (currentSettings.telegramChatId && currentSettings.telegramChatId !== domain.telegramChatId) {
-                                            chatIdsToSend.push(currentSettings.telegramChatId);
-                                        }
-
-                                        if (currentSettings.telegramBotToken && chatIdsToSend.length > 0) {
-                                            // Send to all chat IDs
-                                            Promise.all(chatIdsToSend.map(chatId => 
-                                                sendTelegramAlert(currentSettings.telegramBotToken, chatId, domain, blockedISPs)
-                                                    .then(sent => ({ chatId, sent }))
-                                                    .catch(error => ({ chatId, sent: false, error }))
-                                            )).then(results => {
-                                                const successCount = results.filter(r => r.sent).length;
-                                                const failedCount = results.length - successCount;
-                                                
-                                                if (successCount > 0) {
-                                                    const chatIdSources = results.filter(r => r.sent).map(r => 
-                                                        r.chatId === domain.telegramChatId ? 'custom chat' : 'default chat'
-                                                    );
-                                                    addLog(`Telegram alert sent for ${domain.hostname} to ${chatIdSources.join(' and ')}`, 'success');
-                                                }
-                                                
-                                                if (failedCount > 0) {
-                                                    addLog(`Failed to send Telegram alert for ${domain.hostname} to ${failedCount} chat(s)`, 'error');
-                                                }
-                                            }).catch(error => {
-                                                console.error('Error sending Telegram alerts:', error);
-                                                addLog(`Error sending Telegram alerts for ${domain.hostname}`, 'error');
-                                            });
-                                        }
+                                        // Note: Telegram alerts are now sent by Workers Cron job (not from frontend)
+                                        // Workers will send combined table alerts for all domains at configured intervals
                                     }
 
                                     return {
