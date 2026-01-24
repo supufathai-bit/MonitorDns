@@ -1564,97 +1564,97 @@ export default function Home() {
                                 return updated;
                             });
 
-    // All domains updated, scan complete
-    if (!hasBlockedDomains) {
-        addLog('All domains are active', 'success');
-    }
+                                // All domains updated, scan complete
+                                if (!hasBlockedDomains) {
+                                    addLog('All domains are active', 'success');
+                                }
 
-    // Send Telegram alert table (combined table for all domains) after scan completes
-    // Use setTimeout to ensure state is updated before sending alert
-    // Use domainsRef.current instead of updatedDomainsForAlert because ref updates immediately
-    setTimeout(async () => {
-        const currentSettings = settingsRef.current;
-        const domainsForAlert = domainsRef.current; // Use ref instead of updatedDomainsForAlert
-        console.log('🔔 [Frontend Alert] Checking conditions:', {
-            hasBotToken: !!currentSettings.telegramBotToken,
-            hasChatId: !!currentSettings.telegramChatId,
-            domainsCount: domainsForAlert.length,
-            botTokenLength: currentSettings.telegramBotToken?.length || 0,
-            chatId: currentSettings.telegramChatId || 'N/A'
-        });
+                                // Send Telegram alert table (combined table for all domains) after scan completes
+                                // Use setTimeout to ensure state is updated before sending alert
+                                // Use domainsRef.current instead of updatedDomainsForAlert because ref updates immediately
+                                setTimeout(async () => {
+                                    const currentSettings = settingsRef.current;
+                                    const domainsForAlert = domainsRef.current; // Use ref instead of updatedDomainsForAlert
+                                    console.log('🔔 [Frontend Alert] Checking conditions:', {
+                                        hasBotToken: !!currentSettings.telegramBotToken,
+                                        hasChatId: !!currentSettings.telegramChatId,
+                                        domainsCount: domainsForAlert.length,
+                                        botTokenLength: currentSettings.telegramBotToken?.length || 0,
+                                        chatId: currentSettings.telegramChatId || 'N/A'
+                                    });
 
-        if (currentSettings.telegramBotToken && currentSettings.telegramChatId && domainsForAlert.length > 0) {
-            try {
-                console.log(`🔔 [Frontend Alert] Sending alert table with ${domainsForAlert.length} domains`);
-                addLog(`Sending Telegram alert table (${domainsForAlert.length} domains)...`, 'info');
+                                    if (currentSettings.telegramBotToken && currentSettings.telegramChatId && domainsForAlert.length > 0) {
+                                        try {
+                                            console.log(`🔔 [Frontend Alert] Sending alert table with ${domainsForAlert.length} domains`);
+                                            addLog(`Sending Telegram alert table (${domainsForAlert.length} domains)...`, 'info');
 
-                // Send combined table alert to default chat
-                const sent = await sendTelegramAlertTable(
-                    currentSettings.telegramBotToken,
-                    currentSettings.telegramChatId,
-                    domainsForAlert
-                );
+                                            // Send combined table alert to default chat
+                                            const sent = await sendTelegramAlertTable(
+                                                currentSettings.telegramBotToken,
+                                                currentSettings.telegramChatId,
+                                                domainsForAlert
+                                            );
 
-                if (sent) {
-                    console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully');
-                    addLog(`Telegram alert table sent (${domainsForAlert.length} domains)`, 'success');
-                } else {
-                    console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table (sent = false)');
-                    addLog('Failed to send Telegram alert table', 'error');
-                }
-            } catch (error) {
-                console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
-                addLog(`Error sending Telegram alert table: ${error instanceof Error ? error.message : String(error)}`, 'error');
-            }
-        } else {
-            const missingItems = [];
-            if (!currentSettings.telegramBotToken) missingItems.push('Bot Token');
-            if (!currentSettings.telegramChatId) missingItems.push('Chat ID');
-            if (domainsForAlert.length === 0) missingItems.push('Domains (empty)');
+                                            if (sent) {
+                                                console.log('🔔 [Frontend Alert] ✅ Telegram alert table sent successfully');
+                                                addLog(`Telegram alert table sent (${domainsForAlert.length} domains)`, 'success');
+                                            } else {
+                                                console.error('🔔 [Frontend Alert] ❌ Failed to send Telegram alert table (sent = false)');
+                                                addLog('Failed to send Telegram alert table', 'error');
+                                            }
+                                        } catch (error) {
+                                            console.error('🔔 [Frontend Alert] ❌ Error sending Telegram alert table:', error);
+                                            addLog(`Error sending Telegram alert table: ${error instanceof Error ? error.message : String(error)}`, 'error');
+                                        }
+                                    } else {
+                                        const missingItems = [];
+                                        if (!currentSettings.telegramBotToken) missingItems.push('Bot Token');
+                                        if (!currentSettings.telegramChatId) missingItems.push('Chat ID');
+                                        if (domainsForAlert.length === 0) missingItems.push('Domains (empty)');
 
-            console.warn('🔔 [Frontend Alert] ⚠️ Skipping alert - missing:', missingItems.join(', '));
-            addLog(`Skipping Telegram alert - missing: ${missingItems.join(', ')}`, 'info');
-        }
-    }, 100); // Wait 100ms for state to update
+                                        console.warn('🔔 [Frontend Alert] ⚠️ Skipping alert - missing:', missingItems.join(', '));
+                                        addLog(`Skipping Telegram alert - missing: ${missingItems.join(', ')}`, 'info');
+                                    }
+                                }, 100); // Wait 100ms for state to update
 
-    // Update nextScanTime in D1 after scan completes (shared storage)
-    const currentInterval = settingsRef.current.checkInterval;
-    if (currentInterval > 0) {
-        const intervalMs = currentInterval * 60 * 1000;
-        const nextScan = Date.now() + intervalMs;
+                                // Update nextScanTime in D1 after scan completes (shared storage)
+                                const currentInterval = settingsRef.current.checkInterval;
+                                if (currentInterval > 0) {
+                                    const intervalMs = currentInterval * 60 * 1000;
+                                    const nextScan = Date.now() + intervalMs;
 
-        // Save to Workers API (D1) - this is where we write nextScanTime
-        try {
-            const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
-            });
+                                    // Save to Workers API (D1) - this is where we write nextScanTime
+                                    try {
+                                        const saveResponse = await fetch(`${workersUrl.replace(/\/$/, '')}/api/next-scan-time`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ nextScanTime: nextScan, checkInterval: currentInterval }),
+                                        });
 
-            if (saveResponse.ok) {
-                const saveData = await saveResponse.json();
-                // Use nextScanTime from response (confirmed saved to D1)
-                const confirmedNextScan = saveData.nextScanTime || nextScan;
-                nextScanTimeRef.current = confirmedNextScan;
-                setNextScanTime(confirmedNextScan);
-                console.log(`📅 Saved next scan time to D1 after manual scan: ${new Date(confirmedNextScan).toLocaleString()}`);
-            } else {
-                // Fallback to local time if save failed
-                nextScanTimeRef.current = nextScan;
-                setNextScanTime(nextScan);
-                console.error('Failed to save next scan time to D1, using local time');
-            }
-        } catch (saveError) {
-            console.error('Error saving next scan time to D1:', saveError);
-            // Fallback to local time on error
-            nextScanTimeRef.current = nextScan;
-            setNextScanTime(nextScan);
-        }
-    }
+                                        if (saveResponse.ok) {
+                                            const saveData = await saveResponse.json();
+                                            // Use nextScanTime from response (confirmed saved to D1)
+                                            const confirmedNextScan = saveData.nextScanTime || nextScan;
+                                            nextScanTimeRef.current = confirmedNextScan;
+                                            setNextScanTime(confirmedNextScan);
+                                            console.log(`📅 Saved next scan time to D1 after manual scan: ${new Date(confirmedNextScan).toLocaleString()}`);
+                                        } else {
+                                            // Fallback to local time if save failed
+                                            nextScanTimeRef.current = nextScan;
+                                            setNextScanTime(nextScan);
+                                            console.error('Failed to save next scan time to D1, using local time');
+                                        }
+                                    } catch (saveError) {
+                                        console.error('Error saving next scan time to D1:', saveError);
+                                        // Fallback to local time on error
+                                        nextScanTimeRef.current = nextScan;
+                                        setNextScanTime(nextScan);
+                                    }
+                                }
 
-    setLoading(false);
-    addLog('Scan complete.', 'success');
-    return;
+                                setLoading(false);
+                                addLog('Scan complete.', 'success');
+                                return;
 } else {
     console.log('Results are older than trigger, waiting for new results...');
 }
