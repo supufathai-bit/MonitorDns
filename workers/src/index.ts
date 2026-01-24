@@ -2037,6 +2037,7 @@ async function handleSaveFrontendSettings(
 }
 
 // Send Telegram alert table (รวมทุกโดเมน)
+// ถ้าโดเมนเยอะเกิน Telegram limit (4096 chars) จะแยกส่งเป็นหลายข้อความ แต่ยังคงเป็นตารางรวม
 async function sendTelegramAlertTable(
     botToken: string,
     chatId: string,
@@ -2070,51 +2071,124 @@ async function sendTelegramAlertTable(
         return '❓';
     };
 
-    // สร้างตารางแบบ monospace ใน pre block (มี copy button ใน Telegram)
-    let table = '<pre>\n';
-    table += 'Domain               | A   | T   | D\n';
-    table += '---------------------+-----+-----+-----\n';
+    // สร้างตารางสำหรับโดเมนชุดหนึ่ง
+    const createTableForDomains = (domains: typeof blockedDomains, partNumber?: number, totalParts?: number): string => {
+        let table = '<pre>\n';
+        table += 'Domain               | A   | T   | D\n';
+        table += '---------------------+-----+-----+-----\n';
 
-    for (const domain of blockedDomains) {
-        const aisStatus = findISPStatus(domain.resultsByISP, ['AIS', 'ais']);
-        const dtacStatus = findISPStatus(domain.resultsByISP, ['DTAC', 'dtac']);
+        for (const domain of domains) {
+            const aisStatus = findISPStatus(domain.resultsByISP, ['AIS', 'ais']);
+            const dtacStatus = findISPStatus(domain.resultsByISP, ['DTAC', 'dtac']);
 
-        const aisEmoji = getStatusEmoji(aisStatus);
-        const trueEmoji = getStatusEmoji(dtacStatus);
-        const dtacEmoji = getStatusEmoji(dtacStatus);
+            const aisEmoji = getStatusEmoji(aisStatus);
+            const trueEmoji = getStatusEmoji(dtacStatus);
+            const dtacEmoji = getStatusEmoji(dtacStatus);
 
-        // จำกัดความยาว hostname ให้ไม่เกิน 21 ตัวอักษร
-        const displayHostname = domain.hostname.length > 21
-            ? domain.hostname.substring(0, 18) + '...'
-            : domain.hostname;
+            // จำกัดความยาว hostname ให้ไม่เกิน 21 ตัวอักษร
+            const displayHostname = domain.hostname.length > 21
+                ? domain.hostname.substring(0, 18) + '...'
+                : domain.hostname;
 
-        table += displayHostname.padEnd(21) + `| ${aisEmoji}  | ${trueEmoji}  | ${dtacEmoji}\n`;
+            table += displayHostname.padEnd(21) + `| ${aisEmoji}  | ${trueEmoji}  | ${dtacEmoji}\n`;
+        }
+
+        table += '</pre>';
+
+        // สร้าง header
+        let header = '🔔 <b>สถานะเว็บไซต์</b> 🔔';
+        if (totalParts && totalParts > 1) {
+            header += ` <i>(${partNumber}/${totalParts})</i>`;
+        }
+
+        // สร้าง footer
+        const footer = '<i>A = AIS, T = True, D = DTAC</i>';
+
+        return `${header}\n\n${table}\n\n${footer}`;
+    };
+
+    // Telegram message limit (4096 characters)
+    const TELEGRAM_LIMIT = 4000; // ใช้ 4000 เพื่อความปลอดภัย (เหลือ buffer สำหรับ HTML tags)
+    const headerFooterLength = 100; // ประมาณความยาว header + footer
+    const rowLength = 50; // ประมาณความยาวแต่ละแถวในตาราง
+
+    // ลองสร้างข้อความทั้งหมดก่อน
+    const fullMessage = createTableForDomains(blockedDomains);
+    
+    // ถ้าข้อความไม่เกิน limit ส่งเลย
+    if (fullMessage.length <= TELEGRAM_LIMIT) {
+        try {
+            const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: fullMessage,
+                    parse_mode: 'HTML',
+                }),
+            });
+
+            const data = await response.json();
+            if (!data.ok) {
+                console.error('Telegram API error:', data);
+            }
+            return data.ok;
+        } catch (error) {
+            console.error('Failed to send Telegram alert table', error);
+            return false;
+        }
     }
 
-    table += '</pre>';
+    // ถ้าเกิน limit แบ่งเป็นหลายข้อความ
+    // คำนวณจำนวนโดเมนต่อข้อความ (ประมาณ)
+    const domainsPerMessage = Math.floor((TELEGRAM_LIMIT - headerFooterLength) / rowLength);
+    const totalParts = Math.ceil(blockedDomains.length / domainsPerMessage);
 
-    const message = `🚨 <b>สถานะเว็บไซต์</b>\n\n${table}\n\n<i>A = AIS, T = True, D = DTAC</i>`;
+    console.log(`🔔 [Alert] Message too long (${fullMessage.length} chars), splitting into ${totalParts} parts (${domainsPerMessage} domains per part)`);
 
-    try {
-        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text: message,
-                parse_mode: 'HTML',
-            }),
-        });
+    // แบ่งโดเมนเป็นชุดๆ และส่งทีละชุด
+    let allSent = true;
+    for (let i = 0; i < blockedDomains.length; i += domainsPerMessage) {
+        const domainChunk = blockedDomains.slice(i, i + domainsPerMessage);
+        const partNumber = Math.floor(i / domainsPerMessage) + 1;
+        const message = createTableForDomains(domainChunk, partNumber, totalParts);
 
-        const data = await response.json();
-        return data.ok;
-    } catch (error) {
-        console.error('Failed to send Telegram alert table', error);
-        return false;
+        try {
+            const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: message,
+                    parse_mode: 'HTML',
+                }),
+            });
+
+            const data = await response.json();
+            if (!data.ok) {
+                console.error(`Telegram API error for part ${partNumber}:`, data);
+                allSent = false;
+            } else {
+                console.log(`🔔 [Alert] Sent part ${partNumber}/${totalParts} to ${chatId} (${domainChunk.length} domains)`);
+            }
+
+            // รอ 100ms ระหว่างข้อความเพื่อไม่ให้ Telegram rate limit
+            if (i + domainsPerMessage < blockedDomains.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        } catch (error) {
+            console.error(`Failed to send Telegram alert table part ${partNumber}:`, error);
+            allSent = false;
+        }
     }
+
+    return allSent;
 }
 
 // Check and send alerts for blocked domains
